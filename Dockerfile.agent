@@ -1,0 +1,26 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+
+FROM node:20-alpine
+WORKDIR /app
+
+RUN apk add --no-cache curl
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/server/agent ./server/agent
+COPY --from=builder /app/package.json ./
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s \
+  CMD curl -f http://localhost:3001/health || exit 1
+
+ENV FLUOW_AGENT_PORT=3001
+ENV FLUOW_AGENT_API_KEY=fluow-agent-secret-key-change-in-production
+
+CMD ["npx", "tsx", "server/agent/index.ts"]

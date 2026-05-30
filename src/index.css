@@ -1,161 +1,130 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Fira Code", ui-monospace, SFMono-Regular, monospace;
 
-  /* High Density Theme Custom Color Overrides */
-  --color-slate-50: #f9fafb;
-  --color-slate-100: #f3f4f6;
-  --color-slate-200: #e5e7eb;
+  /* Premium Light Theme Colors */
+  --color-background-base: #F8FAF8;
+  --color-card-bg: #FFFFFF;
+  --color-border-subtle: #E7ECE8;
+  
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  
+  --color-green-primary: #22C55E;
+  --color-green-soft: #DCFCE7;
+  --color-green-hover: #16A34A;
+  --color-green-dark: #14532D;
+  
+  --color-gray-light: #F1F5F9;
+
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
   --color-slate-300: #cbd5e1;
-  --color-slate-850: #111827;
-  --color-slate-800: #111827;
-  --color-slate-900: #111827;
-  --color-zinc-900: #111827;
-  --color-gray-900: #111827;
-  
-  --color-indigo-50: #eff6ff;
-  --color-indigo-100: #eff6ff;
-  --color-indigo-150: #dbeafe;
-  --color-indigo-200: #bfdbfe;
-  --color-indigo-550: #2563eb;
-  --color-indigo-600: #2563eb;
-  --color-indigo-650: #2563eb;
-  --color-indigo-700: #1d4ed8;
-  --color-indigo-800: #1e40af;
-  --color-indigo-900: #1e3a8a;
-  
-  --color-blue-50: #eff6ff;
-  --color-blue-100: #dbeafe;
-  --color-blue-600: #2563eb;
-  --color-blue-700: #1d4ed8;
-
-  --color-emerald-500: #10b981;
-  --color-emerald-600: #059669;
-  --color-emerald-700: #047857;
-
-  --color-amber-500: #f59e0b;
-  --color-amber-600: #d97706;
-  --color-amber-700: #b45309;
-
-  --color-rose-500: #ef4444;
-  --color-rose-600: #dc2626;
-  --color-rose-700: #b91c1c;
-
-  --color-red-500: #ef4444;
-  --color-red-600: #dc2626;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
 }
 
-/* Custom smooth transitions and animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Global Styles */
+body {
+  background-color: var(--color-background-base);
+  color: var(--color-text-primary);
+  font-family: "Outfit", sans-serif;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Premium Card Utilities */
+.premium-card {
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 4px 6px rgba(0,0,0,0.02);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.premium-card-hover:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.03);
+  transform: translateY(-2px);
+}
+
+/* Custom Scrollbar - Minimal */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-slate-300);
+}
+
+/* Animations */
+@keyframes fadeInSoft {
+  0% { opacity: 0; transform: translateY(5px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInSoft 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Scrollbar styling - very thin for high density */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: #f9fafb;
-}
-::-webkit-scrollbar-thumb {
-  background: #e5e7eb;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
+/* Typography refinements */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
-/* -------------------------------------------------------------
-   HIGH DENSITY GLOBAL OVERRIDES
-   Ensures deep nested components take on a compact, highly professional structure
-   ------------------------------------------------------------- */
-
-/* Reduce oversized modern margin-radius curves for sharp grid precision */
-.rounded-2xl {
-  border-radius: 8px !important;
-}
-.rounded-xl {
-  border-radius: 6px !important;
-}
-.rounded-lg {
-  border-radius: 4px !important;
-}
-
-/* Condense layout padding definitions across cards & views */
-.p-5 {
-  padding: 12px 14px !important;
-}
-.p-6 {
-  padding: 14px 16px !important;
-}
-.p-8 {
-  padding: 16px !important;
-}
-.p-7 {
-  padding: 14px !important;
-}
-
-/* Condense lists and gaps */
-.space-y-6 > * + * {
-  margin-top: 12px !important;
-}
-.space-y-8 > * + * {
-  margin-top: 14px !important;
-}
-.gap-6 {
-  gap: 12px !important;
-}
-.gap-8 {
-  gap: 14px !important;
-}
-
-/* High tension headings and crisp copy */
-h1 {
-  font-size: 1.15rem !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em !important;
-  color: #111827 !important;
-}
-h2 {
-  font-size: 1.05rem !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.015em !important;
-  color: #111827 !important;
-}
-h3 {
-  font-size: 0.95rem !important;
-  font-weight: 600 !important;
-  color: #111827 !important;
-}
-
-/* Condense tables */
-th {
-  padding: 8px 12px !important;
-  font-size: 0.75rem !important;
-  font-weight: 600 !important;
-}
-td {
-  padding: 8px 12px !important;
-  font-size: 0.75rem !important;
-}
-
-/* Condense input fields & buttons */
+/* Form Elements Overrides */
 input, select, textarea {
-  padding-top: 4px !important;
-  padding-bottom: 4px !important;
-  font-size: 0.8125rem !important;
-  border-radius: 4px !important;
+  background-color: var(--color-card-bg) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+  color: var(--color-text-primary) !important;
+  transition: all 0.2s ease;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
 }
-button {
-  border-radius: 4px !important;
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-green-primary) !important;
+  box-shadow: 0 0 0 3px var(--color-green-soft) !important;
+}
+
+/* Table refinements for light minimal theme */
+th {
+  background-color: transparent !important;
+  color: var(--color-text-secondary) !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-size: 0.8125rem !important;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
+}
+
+td {
+  padding: 16px 16px !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
+  color: var(--color-text-primary);
+  font-size: 0.875rem !important;
+}
+
+tr:hover td {
+  background-color: var(--color-background-base);
 }

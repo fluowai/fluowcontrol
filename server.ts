@@ -1,12 +1,32 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { createServer as createHttpServer } from 'http';
 import dotenv from 'dotenv';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
 import { GoogleGenAI } from '@google/genai';
+
+import { registerRoutes as registerAuthRoutes } from './server/api/routes/auth.js';
+import { registerRoutes as registerOrgRoutes } from './server/api/routes/organizations.js';
+import { registerRoutes as registerProductRoutes } from './server/api/routes/products.js';
+import { registerRoutes as registerWorkspaceRoutes } from './server/api/routes/workspaces.js';
+import { registerRoutes as registerTicketRoutes } from './server/api/routes/tickets.js';
+import { registerRoutes as registerWhatsAppRoutes } from './server/api/routes/whatsapp.js';
+import { registerRoutes as registerFinanceiroRoutes } from './server/api/routes/financeiro.js';
+import { registerRoutes as registerInfraRoutes } from './server/api/routes/infrastructure.js';
+import { registerRoutes as registerStorageRoutes } from './server/api/routes/storage.js';
+import { registerRoutes as registerUserRoutes } from './server/api/routes/users.js';
+import { registerRoutes as registerAuditRoutes } from './server/api/routes/audit.js';
+import { registerRoutes as registerAlertRoutes } from './server/api/routes/alerts.js';
+import { registerRoutes as registerEventRoutes } from './server/api/routes/events.js';
+import { registerRoutes as registerMetricsRoutes } from './server/api/routes/metrics.js';
+import { registerRoutes as registerDashboardRoutes } from './server/api/routes/dashboard.js';
+import { setupRealtime } from './server/realtime/index.js';
 
 dotenv.config();
 
-// Ensure standard lazy-initialization pattern and user key protection on first call
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!aiClient) {
@@ -16,34 +36,57 @@ function getGeminiClient(): GoogleGenAI {
     }
     aiClient = new GoogleGenAI({
       apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
   }
   return aiClient;
 }
 
 const app = express();
-const PORT = 3000;
+const httpServer = createHttpServer(app);
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
-app.use(express.json());
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000', process.env.APP_URL || ''].filter(Boolean), credentials: true }));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(morgan('short'));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// API endpoints
+// Register all API routes
+registerAuthRoutes(app);
+registerOrgRoutes(app);
+registerProductRoutes(app);
+registerWorkspaceRoutes(app);
+registerTicketRoutes(app);
+registerWhatsAppRoutes(app);
+registerFinanceiroRoutes(app);
+registerInfraRoutes(app);
+registerStorageRoutes(app);
+registerUserRoutes(app);
+registerAuditRoutes(app);
+registerAlertRoutes(app);
+registerEventRoutes(app);
+registerMetricsRoutes(app);
+registerDashboardRoutes(app);
+
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    product: 'Fluow Control Center',
+    version: '1.0.0',
+    database: 'ok',
+    queue: 'ok',
+    uptime: process.uptime(),
+    time: new Date().toISOString(),
+  });
 });
 
-// Real server-side Gemini endpoint for Módulo 13 (IA Operacional)
+// Gemini AI Copilot endpoint
 app.post('/api/ai/chat', async (req, res) => {
   const { message, systemContext, history } = req.body;
-
   try {
     const aiInstance = getGeminiClient();
-
-    // Contextualize Gemini with live state passed from client
     const customInstruction = `
 Você é o "Fluow AI", a Inteligência Artificial Operacional e Agente de Comando interna da FluowAI.
 Você opera dentro do "Fluow Control Center" (admin.fluowai.com.br).
@@ -61,43 +104,32 @@ ${JSON.stringify(systemContext || {}, null, 2)}
 6. Nunca invente dados falsos se a pergunta perguntar sobre clientes existentes. Se o cliente ou info não estiver no contexto acima, responda educadamente que essa informação não consta no painel atual ou sugira as buscas ideais.
 `.trim();
 
-    // Transform chat history into the expected contents format or standard prompt
     const contents: any[] = [];
     if (history && Array.isArray(history)) {
       history.forEach((h: any) => {
-        contents.push({
-          role: h.role === 'user' ? 'user' : 'model',
-          parts: [{ text: h.text }]
-        });
+        contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.text }] });
       });
     }
-
-    // Push the current user message
-    contents.push({
-      role: 'user',
-      parts: [{ text: message }]
-    });
+    contents.push({ role: 'user', parts: [{ text: message }] });
 
     const response = await aiInstance.models.generateContent({
       model: 'gemini-3.5-flash',
-      contents: contents,
-      config: {
-        systemInstruction: customInstruction,
-        temperature: 0.3,
-      }
+      contents,
+      config: { systemInstruction: customInstruction, temperature: 0.3 },
     });
 
-    const outputText = response.text || 'Desculpe, não consegui processar a resposta do modelo.';
-    res.json({ text: outputText });
-
+    res.json({ text: response.text || 'Desculpe, não consegui processar a resposta do modelo.' });
   } catch (error: any) {
     console.error('Gemini API Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message || 'Erro interno ao processar inteligência artificial.',
-      isMissingKey: !process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY'
+      isMissingKey: !process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY',
     });
   }
 });
+
+// Setup WebSocket/Realtime
+const io = setupRealtime(httpServer);
 
 // Configure Vite integration
 const startServer = async () => {
@@ -115,8 +147,9 @@ const startServer = async () => {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Fluow Control Center Server] Running at http://localhost:${PORT}`);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Fluow Control Center] Running at http://localhost:${PORT}`);
+    console.log(`[Fluow Control Center] WebSocket/Realtime at ws://localhost:${PORT}`);
   });
 };
 

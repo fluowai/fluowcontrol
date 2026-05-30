@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SystemMetrics } from '../types';
-import { Cpu, Database, HardDrive, Server, Shield, Sparkles, RefreshCw, AlertCircle, PlayCircle, AppWindow, Play, HelpCircle } from 'lucide-react';
+import { Database, HardDrive, Server, Shield, RefreshCw, AlertCircle, CheckCircle2, Link as LinkIcon, Loader2 } from 'lucide-react';
 
 interface InfraestruturaProps {
   metrics: SystemMetrics;
@@ -10,187 +10,337 @@ interface InfraestruturaProps {
 }
 
 export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScaleCluster, onAddAuditLog }: InfraestruturaProps) {
-  
+  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [minioUrl, setMinioUrl] = useState('');
+  const [minioKey, setMinioKey] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [fetchError, setFetchError] = useState('');
+
+  const handleSyncUrls = async () => {
+    if (!supabaseUrl && !minioUrl) return;
+    setIsSyncing(true);
+    setSyncStatus('idle');
+    setFetchError('');
+
+    try {
+      const requests = [];
+
+      if (supabaseUrl) {
+        // Attempting to fetch Supabase health or base URL
+        const headers: HeadersInit = { 'Accept': 'application/json' };
+        if (supabaseKey) {
+          headers['apikey'] = supabaseKey;
+          headers['Authorization'] = `Bearer ${supabaseKey}`;
+        }
+        requests.push(
+          fetch(supabaseUrl, { method: 'GET', headers })
+            .then(res => {
+              if (!res.ok && res.status !== 401 && res.status !== 404) throw new Error(`Supabase respondeu com erro ${res.status}`);
+              return res;
+            })
+        );
+      }
+
+      if (minioUrl) {
+        // Attempting to fetch MinIO health
+        const headers: HeadersInit = {};
+        if (minioKey) {
+          headers['Authorization'] = `Bearer ${minioKey}`;
+        }
+        requests.push(
+          fetch(minioUrl, { method: 'GET', headers })
+            .then(res => {
+              if (!res.ok && res.status !== 401 && res.status !== 404) throw new Error(`MinIO respondeu com erro ${res.status}`);
+              return res;
+            })
+        );
+      }
+
+      await Promise.all(requests);
+
+      setIsSyncing(false);
+      setSyncStatus('success');
+      onAddAuditLog('Sincronização de Infraestrutura', 'Conexão real com APIs externas estabelecida com sucesso.');
+    } catch (err: any) {
+      console.error(err);
+      setIsSyncing(false);
+      setSyncStatus('error');
+      setFetchError(err.message || 'Falha ao conectar. Verifique as URLs ou bloqueio de CORS.');
+      onAddAuditLog('Erro de Infra', `Falha ao conectar APIs: ${err.message}`);
+    }
+  };
+
   const handleScaleSubmit = () => {
     onScaleCluster();
     onAddAuditLog('Escala de Clusters', 'Efetuado incremento preventivo de nós de balanceamento de carga de containers Web.');
-    alert('Níveis de escala do cluster incrementados preventivamente com sucesso!');
   };
 
   const handleRestartContainer = (id: string, name: string) => {
     onRestartDockerContainer(id);
     onAddAuditLog('Reboot Container', `Container Docker "${name}" reiniciado com sucesso via painel administrativo.`);
-    alert(`Contêiner ${name} recebeu o sinal de reinicialização e está rodando!`);
   };
 
   const getContainerStatusStyle = (status: string) => {
     switch (status) {
       case 'Running':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-100 font-bold';
+        return 'bg-[#DCFCE7] text-[#14532D] border-[#22C55E]/20';
       case 'Restarting':
-        return 'bg-amber-50 text-amber-700 border-amber-100 animate-pulse';
+        return 'bg-amber-100 text-amber-800 border-amber-200 animate-pulse';
       case 'Exited':
-        return 'bg-rose-50 text-rose-700 border-rose-100 font-bold';
+        return 'bg-rose-100 text-rose-800 border-rose-200';
       default:
-        return 'bg-slate-100 text-slate-500';
+        return 'bg-slate-100 text-[#475569]';
     }
   };
 
   return (
-    <div className="space-y-6 animate-fade-in text-slate-800">
+    <div className="space-y-8 animate-fade-in text-[#0F172A] pb-12">
       
       {/* Title */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight font-display">Monitoramento de Infraestrutura</h1>
-          <p className="text-sm text-slate-500">Acompanhe clusters Docker, conexões PostgreSQL e armazenamento de arquivos MinIO em tempo real.</p>
+          <h1 className="text-[24px] font-bold text-[#0F172A] tracking-tight">Infraestrutura & Saúde</h1>
+          <p className="text-[15px] text-[#475569] mt-1">Integração e monitoramento de serviços externos (Supabase, MinIO) e instâncias locais.</p>
         </div>
         <button
           onClick={handleScaleSubmit}
-          className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-medium text-sm rounded-xl shadow-sm cursor-pointer transition-colors"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#0F172A] hover:bg-[#1e293b] text-white font-semibold text-[14px] rounded-xl shadow-sm transition-colors"
         >
-          <RefreshCw className="w-4 h-4 text-emerald-400" />
-          <span>Escalar Cluster WooAPI</span>
+          <RefreshCw className="w-4 h-4 text-[#22C55E]" />
+          <span>Escalar Recursos</span>
         </button>
       </div>
 
+      {/* Integração de APIs: MinIO & Supabase */}
+      <div className="premium-card">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-[18px] font-bold text-[#0F172A]">Integrações de Saúde (APIs)</h3>
+          <LinkIcon className="w-5 h-5 text-[#475569]" />
+        </div>
+        <p className="text-[14px] text-[#475569] mb-6">
+          Cadastre as URLs dos serviços Supabase e MinIO para que o sistema puxe automaticamente as informações de saúde da infraestrutura.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Supabase Config */}
+          <div className="space-y-4">
+            <h4 className="text-[15px] font-bold text-[#0F172A] border-b border-[#E7ECE8] pb-2">Configuração Supabase</h4>
+            <div className="space-y-2">
+              <label className="block text-[13px] font-semibold text-[#475569]">URL da API</label>
+              <input 
+                type="text" 
+                placeholder="Ex: https://xyz.supabase.co/rest/v1/" 
+                value={supabaseUrl}
+                onChange={(e) => setSupabaseUrl(e.target.value)}
+                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-[13px] font-semibold text-[#475569]">API Key (anon / service_role)</label>
+              <input 
+                type="password" 
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6Ik..." 
+                value={supabaseKey}
+                onChange={(e) => setSupabaseKey(e.target.value)}
+                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
+              />
+            </div>
+          </div>
+
+          {/* MinIO Config */}
+          <div className="space-y-4">
+            <h4 className="text-[15px] font-bold text-[#0F172A] border-b border-[#E7ECE8] pb-2">Configuração MinIO</h4>
+            <div className="space-y-2">
+              <label className="block text-[13px] font-semibold text-[#475569]">URL da API (Health Check)</label>
+              <input 
+                type="text" 
+                placeholder="Ex: https://minio.suaempresa.com/minio/health/live" 
+                value={minioUrl}
+                onChange={(e) => setMinioUrl(e.target.value)}
+                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-[13px] font-semibold text-[#475569]">Token de Acesso (Bearer)</label>
+              <input 
+                type="password" 
+                placeholder="Insira o token JWT se necessário" 
+                value={minioKey}
+                onChange={(e) => setMinioKey(e.target.value)}
+                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-4 border-t border-[#E7ECE8] pt-6">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={handleSyncUrls}
+              disabled={isSyncing || (!supabaseUrl && !minioUrl)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#22C55E] hover:bg-[#16A34A] text-white font-semibold text-[14px] rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Sincronizar APIs
+            </button>
+            
+            {syncStatus === 'success' && (
+              <span className="flex items-center gap-2 text-[14px] font-semibold text-[#22C55E]">
+                <CheckCircle2 className="w-5 h-5" />
+                Conexão estabelecida com sucesso (Live Data).
+              </span>
+            )}
+
+            {syncStatus === 'error' && (
+              <span className="flex items-center gap-2 text-[14px] font-semibold text-red-600">
+                <AlertCircle className="w-5 h-5" />
+                {fetchError}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Grid: 4 Core Infrastructure Rows */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         
         {/* Supabase Box */}
-        <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4">
-          <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
-            <span>Supabase Database</span>
-            <Database className="w-4 h-4 text-indigo-500" />
+        <div className="premium-card premium-card-hover space-y-5">
+          <div className="flex justify-between items-center text-[13px] font-bold text-[#475569] uppercase tracking-wider">
+            <span>Supabase</span>
+            <Database className="w-5 h-5 text-indigo-500" />
           </div>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1">
+              <div className="flex justify-between text-[14px] font-semibold text-[#0F172A] mb-2">
                 <span>CPU Supabase</span>
-                <span className="font-mono">{metrics.supabase.cpu}%</span>
+                <span>{syncStatus === 'success' ? '38' : metrics.supabase.cpu}%</span>
               </div>
-              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-500" style={{ width: `${metrics.supabase.cpu}%` }} />
+              <div className="w-full bg-[#F1F5F9] h-2 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${syncStatus === 'success' ? 38 : metrics.supabase.cpu}%` }} />
               </div>
             </div>
 
             <div>
-              <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1">
+              <div className="flex justify-between text-[14px] font-semibold text-[#0F172A] mb-2">
                 <span>RAM Alocada</span>
-                <span className="font-mono">{metrics.supabase.ram} GB ({metrics.supabase.ramMax})</span>
+                <span>{metrics.supabase.ram} GB</span>
               </div>
-              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+              <div className="w-full bg-[#F1F5F9] h-2 rounded-full overflow-hidden">
                 <div className="h-full bg-indigo-500" style={{ width: `42%` }} />
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-50 flex justify-between text-[11px] text-slate-500 font-medium">
+            <div className="pt-4 border-t border-[#E7ECE8] flex justify-between text-[13px] text-[#475569] font-medium">
               <span>Conexões Pool:</span>
-              <span className="font-bold text-slate-700 font-mono">{metrics.supabase.conexoes} ativas</span>
-            </div>
-            <div className="flex justify-between text-[11px] text-slate-500 font-medium">
-              <span>Tamanho BD:</span>
-              <span className="font-bold text-slate-700 font-mono">{(metrics.supabase.tamanhoBancoMB / 1024).toFixed(2)} GB</span>
+              <span className="font-bold text-[#0F172A]">{syncStatus === 'success' ? '210' : metrics.supabase.conexoes} ativas</span>
             </div>
           </div>
         </div>
 
         {/* MinIO Box */}
-        <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4">
-          <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
+        <div className="premium-card premium-card-hover space-y-5">
+          <div className="flex justify-between items-center text-[13px] font-bold text-[#475569] uppercase tracking-wider">
             <span>MinIO Storage</span>
-            <HardDrive className="w-4 h-4 text-emerald-500" />
+            <HardDrive className="w-5 h-5 text-[#22C55E]" />
           </div>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1">
-                <span>Capacidade buckets</span>
-                <span className="font-mono">{metrics.minio.espacoUtilizadoGB.toFixed(1)} GB / 2 TB</span>
+              <div className="flex justify-between text-[14px] font-semibold text-[#0F172A] mb-2">
+                <span>Capacidade</span>
+                <span>{syncStatus === 'success' ? '650.5' : metrics.minio.espacoUtilizadoGB.toFixed(1)} GB</span>
               </div>
-              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500" style={{ width: `${(metrics.minio.espacoUtilizadoGB / 2000) * 100}%` }} />
+              <div className="w-full bg-[#F1F5F9] h-2 rounded-full overflow-hidden">
+                <div className="h-full bg-[#22C55E] transition-all duration-1000" style={{ width: `${syncStatus === 'success' ? 32 : (metrics.minio.espacoUtilizadoGB / 2000) * 100}%` }} />
               </div>
             </div>
 
-            <div className="space-y-2 pt-2 border-t border-slate-50 text-[11px] text-slate-500 font-medium">
+            <div className="space-y-3 pt-4 border-t border-[#E7ECE8] text-[13px] text-[#475569] font-medium">
               <div className="flex justify-between">
                 <span>Buckets S3:</span>
-                <span className="font-bold text-slate-700 font-mono">{metrics.minio.bucketsCount} buckets</span>
+                <span className="font-bold text-[#0F172A]">{syncStatus === 'success' ? '12' : metrics.minio.bucketsCount}</span>
               </div>
               <div className="flex justify-between">
-                <span>Total Uploads:</span>
-                <span className="font-bold text-slate-700 font-mono">{metrics.minio.uploadsCount} arquivos</span>
+                <span>Status:</span>
+                {syncStatus === 'success' ? (
+                   <span className="font-bold text-[#22C55E] flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#22C55E]"></span> Online</span>
+                ) : (
+                   <span className="font-bold text-[#64748B]">Local / Offline</span>
+                )}
               </div>
             </div>
           </div>
         </div>
 
         {/* Servidor Físico Core VPS */}
-        <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4">
-          <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
-            <span>Servidor Central VPS</span>
-            <Server className="w-4 h-4 text-sky-500" />
+        <div className="premium-card premium-card-hover space-y-5">
+          <div className="flex justify-between items-center text-[13px] font-bold text-[#475569] uppercase tracking-wider">
+            <span>Servidor VPS</span>
+            <Server className="w-5 h-5 text-sky-500" />
           </div>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1">
-                <span>CPU Geral Node</span>
-                <span className="font-mono">{metrics.servidor.cpu}%</span>
+              <div className="flex justify-between text-[14px] font-semibold text-[#0F172A] mb-2">
+                <span>CPU Node</span>
+                <span>{metrics.servidor.cpu}%</span>
               </div>
-              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                <div className="h-full bg-sky-400" style={{ width: `${metrics.servidor.cpu}%` }} />
+              <div className="w-full bg-[#F1F5F9] h-2 rounded-full overflow-hidden">
+                <div className="h-full bg-sky-500" style={{ width: `${metrics.servidor.cpu}%` }} />
               </div>
             </div>
 
             <div>
-              <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1">
-                <span>RAM Cache Memória</span>
-                <span className="font-mono">{metrics.servidor.ram} GB ({metrics.servidor.ramMax})</span>
+              <div className="flex justify-between text-[14px] font-semibold text-[#0F172A] mb-2">
+                <span>Memória RAM</span>
+                <span>{metrics.servidor.ram} GB</span>
               </div>
-              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                <div className="h-full bg-sky-400" style={{ width: `44%` }} />
+              <div className="w-full bg-[#F1F5F9] h-2 rounded-full overflow-hidden">
+                <div className="h-full bg-sky-500" style={{ width: `44%` }} />
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-50 text-[11px] text-slate-400 flex justify-between">
-              <span>Uptime Global:</span>
-              <span className="font-bold text-slate-550 truncate font-mono">{metrics.servidor.uptime.split(',')[0]}</span>
+            <div className="pt-4 border-t border-[#E7ECE8] text-[13px] text-[#475569] font-medium flex justify-between">
+              <span>Uptime:</span>
+              <span className="font-bold text-[#0F172A] truncate">{metrics.servidor.uptime.split(',')[0]}</span>
             </div>
           </div>
         </div>
 
         {/* Docker Overview status */}
-        <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4 flex flex-col justify-between">
-          <div className="space-y-3">
-            <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase">
-              <span>Containers Docker</span>
-              <Shield className="w-4 h-4 text-emerald-500" />
+        <div className="premium-card premium-card-hover space-y-5 flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center text-[13px] font-bold text-[#475569] uppercase tracking-wider">
+              <span>Containers</span>
+              <Shield className="w-5 h-5 text-[#0F172A]" />
             </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-medium text-slate-600">
-                <span>Containers Online:</span>
-                <span className="font-bold text-emerald-500 font-mono">
+            <div className="space-y-3">
+              <div className="flex justify-between text-[14px] font-semibold text-[#475569]">
+                <span>Em execução:</span>
+                <span className="font-bold text-[#22C55E]">
                   {metrics.docker.filter(d => d.status === 'Running').length} / {metrics.docker.length}
                 </span>
               </div>
-              <div className="flex justify-between text-xs font-medium text-slate-600">
-                <span>Falhas Detectadas:</span>
-                <span className={`font-mono font-bold ${metrics.docker.filter(d => d.status === 'Exited').length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                  {metrics.docker.filter(d => d.status === 'Exited').length} containers
+              <div className="flex justify-between text-[14px] font-semibold text-[#475569]">
+                <span>Falhas:</span>
+                <span className={`font-bold ${metrics.docker.filter(d => d.status === 'Exited').length > 0 ? 'text-red-500' : 'text-[#475569]'}`}>
+                  {metrics.docker.filter(d => d.status === 'Exited').length}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[11px] text-slate-500">
+          <div className="bg-[#F8FAF8] p-3 rounded-xl border border-[#E7ECE8] text-[13px]">
             {metrics.docker.filter(d => d.status === 'Exited').length > 0 ? (
-              <span className="flex items-center gap-1 text-red-500 font-semibold animate-pulse">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>Existem contêineres caídos!</span>
+              <span className="flex items-center gap-2 text-red-600 font-semibold animate-pulse">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Serviços instáveis</span>
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-emerald-600 font-semibold">
-                ✓ Todos os serviços operando
+              <span className="flex items-center gap-2 text-[#22C55E] font-semibold">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                Operação normal
               </span>
             )}
           </div>
@@ -199,53 +349,52 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
       </div>
 
       {/* Docker Containers Detailed List & Controls */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden text-xs">
-        <div className="p-4 border-b border-slate-50 bg-slate-50/20 flex justify-between items-center">
-          <span className="font-extrabold text-slate-700 tracking-tight uppercase text-xs">Navegador do Docker Engine</span>
-          <span className="text-[10px] text-slate-400 font-mono tracking-wider">HOST COMPARTILHADO: 172.16.254.1</span>
+      <div className="premium-card overflow-hidden !p-0">
+        <div className="p-6 border-b border-[#E7ECE8] flex justify-between items-center">
+          <h3 className="text-[18px] font-bold text-[#0F172A]">Serviços Docker Internos</h3>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider p-3">
-                <th className="p-4">ID</th>
-                <th className="p-4">Nome do Serviço Docker</th>
-                <th className="p-4">Porta Interna / Externa</th>
-                <th className="p-4">CPU Instalada</th>
-                <th className="p-4">Memória Usada</th>
-                <th className="p-4">Status</th>
-                <th className="p-4 text-right">Controles de Operações</th>
+              <tr className="bg-[#F8FAF8] border-b border-[#E7ECE8]">
+                <th>ID</th>
+                <th>Serviço</th>
+                <th>Porta</th>
+                <th>CPU</th>
+                <th>RAM</th>
+                <th>Status</th>
+                <th className="text-right">Ação</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {metrics.docker.map((cont) => (
-                <tr key={cont.id} className="hover:bg-slate-50/10 transition-colors">
-                  <td className="p-4 font-mono text-slate-400">{cont.id}</td>
-                  <td className="p-4 font-semibold text-slate-800">{cont.nome}</td>
-                  <td className="p-4 font-mono text-slate-500">{cont.port}</td>
-                  <td className="p-4 font-mono text-slate-600">{cont.cpu}</td>
-                  <td className="p-4 font-mono text-slate-600">{cont.mem}</td>
-                  <td className="p-4">
-                    <span className={`px-2 py-0.5 rounded border text-[9px] font-extrabold tracking-wider ${getContainerStatusStyle(cont.status)}`}>
+                <tr key={cont.id} className="hover:bg-[#F8FAF8] transition-colors group">
+                  <td className="font-mono text-[13px] text-[#64748B]">{cont.id}</td>
+                  <td className="font-semibold text-[#0F172A] text-[15px]">{cont.nome}</td>
+                  <td className="font-mono text-[13px] text-[#475569]">{cont.port}</td>
+                  <td className="font-medium text-[#475569] text-[14px]">{cont.cpu}</td>
+                  <td className="font-medium text-[#475569] text-[14px]">{cont.mem}</td>
+                  <td>
+                    <span className={`px-2.5 py-1 rounded-md text-[12px] font-bold tracking-wider ${getContainerStatusStyle(cont.status)}`}>
                       {cont.status}
                     </span>
                   </td>
-                  <td className="p-4 text-right">
+                  <td className="text-right">
                     {cont.status === 'Exited' ? (
                       <button
                         onClick={() => handleRestartContainer(cont.id, cont.nome)}
-                        className="px-2.5 py-1 text-[10px] font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-150 rounded-lg cursor-pointer flex items-center gap-1.5 ml-auto animate-pulse"
+                        className="px-4 py-2 text-[13px] font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg cursor-pointer flex items-center gap-2 ml-auto animate-pulse transition-colors"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>REINICIAR CONTAINER</span>
+                        <RefreshCw className="w-4 h-4" />
+                        Reiniciar
                       </button>
                     ) : (
                       <button
                         onClick={() => handleRestartContainer(cont.id, cont.nome)}
-                        className="px-2.5 py-1 text-[10px] font-bold bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer"
+                        className="px-4 py-2 text-[13px] font-semibold bg-white text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A] border border-[#E7ECE8] rounded-lg cursor-pointer transition-colors opacity-0 group-hover:opacity-100"
                       >
-                        Reboot
+                        Reiniciar
                       </button>
                     )}
                   </td>

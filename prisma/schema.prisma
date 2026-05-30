@@ -1,0 +1,559 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrganizationStatus {
+  active
+  trial
+  suspended
+  cancelled
+  overdue
+}
+
+enum ProductStatus {
+  active
+  inactive
+  maintenance
+}
+
+enum WorkspaceStatus {
+  active
+  suspended
+  creating
+  deleting
+}
+
+enum ServiceStatus {
+  online
+  offline
+  degraded
+  unknown
+}
+
+enum ServiceType {
+  frontend
+  backend
+  worker
+  database
+  storage
+  whatsapp
+  api
+  queue
+  cache
+}
+
+enum ContainerState {
+  running
+  exited
+  restarting
+  paused
+  removing
+  dead
+  created
+}
+
+enum WhatsAppStatus {
+  connected
+  disconnected
+  qr_required
+  pairing
+  banned
+  error
+  unknown
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  waiting_customer
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum TicketChannel {
+  whatsapp
+  ticket
+  email
+  chat
+}
+
+enum EventSeverity {
+  info
+  warning
+  error
+  critical
+}
+
+enum NotificationSeverity {
+  info
+  warning
+  error
+  critical
+}
+
+enum AlertStatus {
+  open
+  acknowledged
+  resolved
+  ignored
+}
+
+enum AlertSeverity {
+  info
+  warning
+  error
+  critical
+}
+
+enum SubscriptionStatus {
+  active
+  trial
+  overdue
+  cancelled
+}
+
+enum BillingCycle {
+  monthly
+  quarterly
+  semiannual
+  annual
+}
+
+enum InvoiceStatus {
+  pending
+  paid
+  overdue
+  cancelled
+  refunded
+}
+
+enum UserRole {
+  owner
+  admin
+  infra
+  suporte
+  financeiro
+  viewer
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  legalName String?  @map("legal_name")
+  document  String?
+  email     String?
+  phone     String?
+  whatsapp  String?
+  status    OrganizationStatus @default(active)
+  planId    String?  @map("plan_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  workspaces      Workspace[]
+  minioBuckets    MinioBucket[]
+  whatsappInstances WhatsAppInstance[]
+  usageEvents     UsageEvent[]
+  alerts          Alert[]
+  supportTickets  SupportTicket[]
+  subscriptions   Subscription[]
+  auditLogs       AuditLog[]
+  invoices        Invoice[]
+  notifications   Notification[]
+  users           User[]
+
+  @@map("organizations")
+}
+
+model Product {
+  id             String        @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String        @unique
+  description    String?
+  publicUrl      String?       @map("public_url")
+  adminUrl       String?       @map("admin_url")
+  healthcheckUrl String?       @map("healthcheck_url")
+  status         ProductStatus @default(active)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+
+  workspaces    Workspace[]
+  services      Service[]
+  minioBuckets  MinioBucket[]
+  usageEvents   UsageEvent[]
+  alerts        Alert[]
+
+  @@map("products")
+}
+
+model Workspace {
+  id               String          @id @default(uuid()) @db.Uuid
+  organizationId   String          @map("organization_id") @db.Uuid
+  productId        String          @map("product_id") @db.Uuid
+  name             String
+  slug             String
+  publicUrl        String?         @map("public_url")
+  adminUrl         String?         @map("admin_url")
+  databaseSchema   String?         @map("database_schema")
+  minioBucket      String?         @map("minio_bucket")
+  dockerStack      String?         @map("docker_stack")
+  status           WorkspaceStatus @default(active)
+  plan             String?
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  usageEvents  UsageEvent[]
+  alerts       Alert[]
+
+  @@map("workspaces")
+}
+
+model Service {
+  id                 String        @id @default(uuid()) @db.Uuid
+  productId          String        @map("product_id") @db.Uuid
+  name               String
+  type               ServiceType
+  dockerContainerName String?       @map("docker_container_name")
+  dockerStackName    String?        @map("docker_stack_name")
+  internalUrl        String?        @map("internal_url")
+  publicUrl          String?        @map("public_url")
+  healthcheckUrl     String?        @map("healthcheck_url")
+  status             ServiceStatus  @default(unknown)
+  lastSeenAt         DateTime?      @map("last_seen_at") @db.Timestamptz()
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+
+  product        Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  healthChecks   ApiHealthCheck[]
+  alerts         Alert[]
+
+  @@map("services")
+}
+
+model DockerContainer {
+  id              String         @id @default(uuid()) @db.Uuid
+  containerId     String         @unique @map("container_id")
+  name            String
+  image           String?
+  status          String?
+  state           ContainerState
+  ports           Json?          @default("[]")
+  cpuPercent      Decimal?       @map("cpu_percent") @db.Decimal(10, 2)
+  memoryUsageMb   Decimal?       @map("memory_usage_mb") @db.Decimal(12, 2)
+  memoryLimitMb   Decimal?       @map("memory_limit_mb") @db.Decimal(12, 2)
+  networkRxMb     Decimal?       @map("network_rx_mb") @db.Decimal(12, 2)
+  networkTxMb     Decimal?       @map("network_tx_mb") @db.Decimal(12, 2)
+  uptimeSeconds   Int?           @map("uptime_seconds")
+  restartCount    Int?           @map("restart_count")
+  lastError       String?        @map("last_error")
+  collectedAt     DateTime       @default(now()) @map("collected_at") @db.Timestamptz()
+
+  @@map("docker_containers")
+}
+
+model InfrastructureMetric {
+  id           String   @id @default(uuid()) @db.Uuid
+  hostName     String   @map("host_name")
+  cpuPercent   Decimal? @map("cpu_percent") @db.Decimal(5, 2)
+  ramUsedGb    Decimal? @map("ram_used_gb") @db.Decimal(8, 2)
+  ramTotalGb   Decimal? @map("ram_total_gb") @db.Decimal(8, 2)
+  diskUsedGb   Decimal? @map("disk_used_gb") @db.Decimal(10, 2)
+  diskTotalGb  Decimal? @map("disk_total_gb") @db.Decimal(10, 2)
+  loadAverage  Json?    @map("load_average")
+  uptimeSeconds Int?    @map("uptime_seconds")
+  collectedAt  DateTime @default(now()) @map("collected_at") @db.Timestamptz()
+
+  @@map("infrastructure_metrics")
+}
+
+model PostgresMetric {
+  id                  String   @id @default(uuid()) @db.Uuid
+  databaseName        String   @map("database_name")
+  sizeMb              Decimal? @map("size_mb") @db.Decimal(12, 2)
+  activeConnections   Int?     @map("active_connections")
+  idleConnections     Int?     @map("idle_connections")
+  maxConnections      Int?     @map("max_connections")
+  slowQueries         Int?     @map("slow_queries")
+  transactionsPerSec  Decimal? @map("transactions_per_second") @db.Decimal(10, 2)
+  cacheHitRatio       Decimal? @map("cache_hit_ratio") @db.Decimal(5, 2)
+  locksCount          Int?     @map("locks_count")
+  deadlocksCount      Int?     @map("deadlocks_count")
+  collectedAt         DateTime @default(now()) @map("collected_at") @db.Timestamptz()
+
+  @@map("postgres_metrics")
+}
+
+model SupabaseMetric {
+  id                String   @id @default(uuid()) @db.Uuid
+  authUsers         Int?     @map("auth_users")
+  realtimeConnections Int?   @map("realtime_connections")
+  storageObjects    Int?     @map("storage_objects")
+  apiRequests1h     Int?     @map("api_requests_1h")
+  apiErrors1h       Int?     @map("api_errors_1h")
+  edgeInvocations1h Int?     @map("edge_invocations_1h")
+  collectedAt       DateTime @default(now()) @map("collected_at") @db.Timestamptz()
+
+  @@map("supabase_metrics")
+}
+
+model MinioBucket {
+  id              String   @id @default(uuid()) @db.Uuid
+  bucketName      String   @map("bucket_name")
+  productId       String?  @map("product_id") @db.Uuid
+  organizationId  String?  @map("organization_id") @db.Uuid
+  totalObjects    Int?     @map("total_objects")
+  sizeMb          Decimal? @map("size_mb") @db.Decimal(12, 2)
+  publicUrl       String?  @map("public_url")
+  status          String?  @default("active")
+  collectedAt     DateTime @default(now()) @map("collected_at") @db.Timestamptz()
+
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@map("minio_buckets")
+}
+
+model WhatsAppInstance {
+  id                  String         @id @default(uuid()) @db.Uuid
+  organizationId      String         @map("organization_id") @db.Uuid
+  workspaceId         String?        @map("workspace_id") @db.Uuid
+  instanceName        String         @map("instance_name")
+  phoneNumber         String?        @map("phone_number")
+  status              WhatsAppStatus @default(unknown)
+  connectionState     String?        @map("connection_state")
+  qrRequired          Boolean        @default(false) @map("qr_required")
+  phoneConnected      String?        @map("phone_connected")
+  lastConnectedAt     DateTime?      @map("last_connected_at") @db.Timestamptz()
+  lastDisconnectedAt  DateTime?      @map("last_disconnected_at") @db.Timestamptz()
+  lastMessageAt       DateTime?      @map("last_message_at") @db.Timestamptz()
+  messagesSent24h     Int?           @default(0) @map("messages_sent_24h")
+  messagesReceived24h Int?           @default(0) @map("messages_received_24h")
+  failedMessages24h   Int?           @default(0) @map("failed_messages_24h")
+  uptimePercent       Decimal?       @map("uptime_percent") @db.Decimal(5, 2)
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_instances")
+}
+
+model ApiHealthCheck {
+  id             String   @id @default(uuid()) @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  url            String
+  method         String   @default("GET")
+  statusCode     Int?     @map("status_code")
+  responseTimeMs Int?     @map("response_time_ms")
+  isOnline       Boolean  @default(false) @map("is_online")
+  errorMessage   String?  @map("error_message")
+  checkedAt      DateTime @default(now()) @map("checked_at") @db.Timestamptz()
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@map("api_health_checks")
+}
+
+model UsageEvent {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String?       @map("organization_id") @db.Uuid
+  workspaceId    String?       @map("workspace_id") @db.Uuid
+  productId      String?       @map("product_id") @db.Uuid
+  eventType      String        @map("event_type")
+  eventName      String        @map("event_name")
+  severity       EventSeverity @default(info)
+  payload        Json?         @default("{}")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@map("usage_events")
+}
+
+model Alert {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String?       @map("organization_id") @db.Uuid
+  workspaceId    String?       @map("workspace_id") @db.Uuid
+  productId      String?       @map("product_id") @db.Uuid
+  serviceId      String?       @map("service_id") @db.Uuid
+  title          String
+  description    String?
+  severity       AlertSeverity @default(warning)
+  status         AlertStatus   @default(open)
+  source         String?
+  payload        Json?         @default("{}")
+  firstSeenAt    DateTime      @default(now()) @map("first_seen_at") @db.Timestamptz()
+  lastSeenAt     DateTime      @default(now()) @map("last_seen_at") @db.Timestamptz()
+  resolvedAt     DateTime?     @map("resolved_at") @db.Timestamptz()
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  product      Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service      Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@map("alerts")
+}
+
+model SupportTicket {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  workspaceId    String?       @map("workspace_id") @db.Uuid
+  title          String
+  description    String?
+  status         TicketStatus  @default(open)
+  priority       TicketPriority @default(medium)
+  category       String?
+  channel        TicketChannel @default(ticket)
+  assignedTo     String?       @map("assigned_to") @db.Uuid
+  slaDueAt       DateTime?     @map("sla_due_at") @db.Timestamptz()
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  closedAt       DateTime?     @map("closed_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedUser User?        @relation("assignedTickets", fields: [assignedTo], references: [id], onDelete: SetNull)
+
+  messages SupportMessage[]
+
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id              String   @id @default(uuid()) @db.Uuid
+  ticketId        String   @map("ticket_id") @db.Uuid
+  senderType      String   @map("sender_type")
+  senderId        String?  @map("sender_id") @db.Uuid
+  message         String
+  attachments     Json?    @default("[]")
+  isInternalNote  Boolean  @default(false) @map("is_internal_note")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("support_messages")
+}
+
+model Subscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  planName       String             @map("plan_name")
+  amount         Decimal            @map("amount") @db.Decimal(12, 2)
+  billingCycle   BillingCycle       @default(monthly) @map("billing_cycle")
+  status         SubscriptionStatus @default(active)
+  dueDay         Int?               @map("due_day")
+  nextDueDate    DateTime?          @map("next_due_date") @db.Date
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  subscriptionId String?       @map("subscription_id") @db.Uuid
+  amount         Decimal       @map("amount") @db.Decimal(12, 2)
+  dueDate        DateTime      @map("due_date") @db.Date
+  paidAt         DateTime?     @map("paid_at") @db.Timestamptz()
+  status         InvoiceStatus @default(pending)
+  description    String?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model User {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  name           String
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  role           UserRole @default(viewer)
+  department     String?
+  team           String?
+  avatarUrl      String?  @map("avatar_url")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  assignedTickets SupportTicket[] @relation("assignedTickets")
+
+  @@map("users")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String?  @map("entity_id") @db.Uuid
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  metadata       Json?    @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String              @id @default(uuid()) @db.Uuid
+  userId    String              @map("user_id") @db.Uuid
+  organizationId String?        @map("organization_id") @db.Uuid
+  title     String
+  message   String?
+  severity  NotificationSeverity @default(info)
+  link      String?
+  readAt    DateTime?           @map("read_at") @db.Timestamptz()
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+model PortainerConnection {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  baseUrl         String   @map("base_url")
+  apiKeyEncrypted String   @map("api_key_encrypted")
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@map("portainer_connections")
+}
+
+model KnowledgeArticle {
+  id        String   @id @default(uuid()) @db.Uuid
+  title     String
+  category  String
+  content   String
+  tags      String[] @default([])
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("knowledge_articles")
+}
