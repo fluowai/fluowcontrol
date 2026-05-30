@@ -1,0 +1,6 @@
+{
+  "name": "Fluow Control Center",
+  "description": "The enterprise SaaS control center for FluowAI operations — managing clients, workspaces, products, financials, tickets, WhatsApp instances, storage, infrastructure, audit logs, and an integrated operational AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
