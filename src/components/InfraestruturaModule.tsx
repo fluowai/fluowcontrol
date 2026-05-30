@@ -13,7 +13,8 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [minioUrl, setMinioUrl] = useState('');
-  const [minioKey, setMinioKey] = useState('');
+  const [minioAccessKey, setMinioAccessKey] = useState('');
+  const [minioSecretKey, setMinioSecretKey] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [fetchError, setFetchError] = useState('');
@@ -46,8 +47,8 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
       if (minioUrl) {
         // Attempting to fetch MinIO health
         const headers: HeadersInit = {};
-        if (minioKey) {
-          headers['Authorization'] = `Bearer ${minioKey}`;
+        if (minioAccessKey && minioSecretKey) {
+          headers['Authorization'] = `Basic ${btoa(minioAccessKey + ':' + minioSecretKey)}`;
         }
         requests.push(
           fetch(minioUrl, { method: 'GET', headers })
@@ -162,15 +163,27 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
                 className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
               />
             </div>
-            <div className="space-y-2">
-              <label className="block text-[13px] font-semibold text-[#475569]">Token de Acesso (Bearer)</label>
-              <input 
-                type="password" 
-                placeholder="Insira o token JWT se necessário" 
-                value={minioKey}
-                onChange={(e) => setMinioKey(e.target.value)}
-                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="block text-[13px] font-semibold text-[#475569]">Access Key</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: admin" 
+                  value={minioAccessKey}
+                  onChange={(e) => setMinioAccessKey(e.target.value)}
+                  className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-[13px] font-semibold text-[#475569]">Secret Key</label>
+                <input 
+                  type="password" 
+                  placeholder="Ex: senha123" 
+                  value={minioSecretKey}
+                  onChange={(e) => setMinioSecretKey(e.target.value)}
+                  className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] text-[#0F172A] focus:outline-none focus:border-[#22C55E]"
+                />
+              </div>
             </div>
           </div>
         </div>
