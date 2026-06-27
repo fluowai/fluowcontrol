@@ -1,10 +1,8 @@
 import { Router } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../../lib/prisma.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { requireMinimumRole } from '../middleware/rbac.js'
 import type { ProductStatus } from '../../types/index.js'
-
-const prisma = new PrismaClient()
 const router = Router()
 
 export function registerRoutes(app: import('express').Express) {

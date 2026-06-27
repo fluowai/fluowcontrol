@@ -1,6 +1,6 @@
 export type PlanType = 'Starter' | 'Pro' | 'Enterprise';
 export type ClientStatus = 'Active' | 'Suspended' | 'Cancelled' | 'Trial';
-export type ProductSlug = 'nexus' | 'gabinete' | 'wooapi' | 'fluow-crm' | 'fluow-support' | 'fluow-ai';
+export type ProductSlug = 'control-center' | 'nexus' | 'gabinete' | 'imobzy' | 'wooapi' | 'supabase' | 'minio' | 'fluow-crm' | 'fluow-support' | 'fluow-ai';
 export type TicketStatus = 'Aberto' | 'Em andamento' | 'Aguardando cliente' | 'Resolvido' | 'Fechado';
 export type TicketPriority = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
 export type TicketChannel = 'WhatsApp' | 'Ticket' | 'E-mail' | 'Chat';

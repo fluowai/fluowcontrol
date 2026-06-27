@@ -1,10 +1,8 @@
-import { PrismaClient } from '@prisma/client'
 import * as DockerService from '../services/docker.js'
 import { PostgresService } from '../services/postgres.js'
 import { SupabaseService } from '../services/supabase.js'
 import { MinioService } from '../services/minio.js'
-
-const prisma = new PrismaClient()
+import prisma from '../lib/prisma.js'
 const postgres = new PostgresService()
 const supabase = new SupabaseService()
 const minio = new MinioService()
@@ -285,4 +283,8 @@ export function runMetricsWorker(): () => void {
     for (const id of intervals) clearInterval(id)
     console.log('[Metrics] Worker stopped')
   }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runMetricsWorker()
 }

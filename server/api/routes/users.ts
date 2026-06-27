@@ -1,11 +1,9 @@
 import { Router } from 'express'
-import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import prisma from '../../lib/prisma.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { requireRole, requireMinimumRole } from '../middleware/rbac.js'
+import { requireMinimumRole, requireRole } from '../middleware/rbac.js'
 import type { UserRole } from '../../types/index.js'
-
-const prisma = new PrismaClient()
 const router = Router()
 
 const rolePermissions: Record<UserRole, string[]> = {
@@ -36,6 +34,56 @@ export function registerRoutes(app: import('express').Express) {
         orderBy: { name: 'asc' },
       })
       return res.json(users)
+    } catch (err) {
+      return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })
+    }
+  })
+
+  router.get('/me/permissions', authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const role = req.user!.role as UserRole
+      const permissions = rolePermissions[role] || []
+      return res.json({ role, permissions })
+    } catch (err) {
+      return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })
+    }
+  })
+
+  router.get('/me/notifications', authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const notifications = await prisma.notification.findMany({
+        where: { userId: req.user!.userId },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      })
+      return res.json(notifications)
+    } catch (err) {
+      return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })
+    }
+  })
+
+  router.post('/me/notifications/:id/read', authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      const notification = await prisma.notification.update({
+        where: { id: req.params.id, userId: req.user!.userId },
+        data: { readAt: new Date() },
+      })
+      return res.json(notification)
+    } catch (err: any) {
+      if (err?.code === 'P2025') {
+        return res.status(404).json({ error: 'NotificaÃ§Ã£o nÃ£o encontrada', code: 'NOT_FOUND' })
+      }
+      return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })
+    }
+  })
+
+  router.post('/me/notifications/read-all', authenticateToken, async (req: AuthRequest, res) => {
+    try {
+      await prisma.notification.updateMany({
+        where: { userId: req.user!.userId, readAt: null },
+        data: { readAt: new Date() },
+      })
+      return res.json({ success: true })
     } catch (err) {
       return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })
     }

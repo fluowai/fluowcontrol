@@ -1,20 +1,36 @@
 const API_BASE = '/api'
 
-let globalApiKey = localStorage.getItem('fluow_backend_api_key') || '';
+let authToken = localStorage.getItem('fluow_auth_token') || '';
+let currentUser = JSON.parse(localStorage.getItem('fluow_auth_user') || 'null');
 
 export const setApiKey = (key: string) => {
-  globalApiKey = key;
-  localStorage.setItem('fluow_backend_api_key', key);
+  setAuthSession(key, currentUser);
 };
 
-export const getApiKey = () => globalApiKey;
+export const getApiKey = () => authToken;
+
+export const setAuthSession = (token: string, user: any) => {
+  authToken = token;
+  currentUser = user;
+  localStorage.setItem('fluow_auth_token', token);
+  localStorage.setItem('fluow_auth_user', JSON.stringify(user || null));
+};
+
+export const clearAuthSession = () => {
+  authToken = '';
+  currentUser = null;
+  localStorage.removeItem('fluow_auth_token');
+  localStorage.removeItem('fluow_auth_user');
+};
+
+export const getAuthToken = () => authToken;
+export const getAuthUser = () => currentUser;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: any = { 'Content-Type': 'application/json', ...options?.headers };
   
-  if (globalApiKey) {
-    headers['Authorization'] = `Bearer ${globalApiKey}`;
-    headers['x-api-key'] = globalApiKey;
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
@@ -130,11 +146,21 @@ export const api = {
     restartContainer: (id: string) => request<any>(`/infra/containers/${id}/restart`, { method: 'POST' }),
     stopContainer: (id: string) => request<any>(`/infra/containers/${id}/stop`, { method: 'POST' }),
     startContainer: (id: string) => request<any>(`/infra/containers/${id}/start`, { method: 'POST' }),
+    pruneDocker: () => request<any>('/infra/docker/prune', { method: 'POST' }),
     host: () => request<any>('/infra/host'),
     postgres: () => request<any>('/infra/postgres'),
     supabase: () => request<any>('/infra/supabase'),
     services: () => request<any[]>('/infra/services'),
     dashboard: () => request<any>('/infra/dashboard'),
+  },
+
+  // VPS / remote hosts over SSH
+  vps: {
+    hosts: () => request<any[]>('/vps/hosts'),
+    createHost: (data: any) => request<any>('/vps/hosts', { method: 'POST', body: JSON.stringify(data) }),
+    test: (data: any) => request<any>('/vps/test', { method: 'POST', body: JSON.stringify(data) }),
+    collect: (id: string) => request<any>(`/vps/hosts/${id}/collect`, { method: 'POST' }),
+    metrics: (id: string) => request<any[]>(`/vps/hosts/${id}/metrics`),
   },
 
   // Storage (MinIO)
@@ -185,11 +211,7 @@ export const api = {
     list: (params?: string) => request<any[]>(`/events${params ? `?${params}` : ''}`),
     recent: () => request<any[]>('/events/recent'),
     stats: () => request<any>('/events/stats'),
-    send: (data: any) => request<any>('/events', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: { 'x-api-key': 'fluow-internal-secret-key-change-in-production' },
-    }),
+    send: (_data: any) => Promise.reject(new Error('Eventos de produto devem ser enviados pelo backend com INTERNAL_API_KEY, nunca pelo browser.')),
   },
 
   // AI Copilot

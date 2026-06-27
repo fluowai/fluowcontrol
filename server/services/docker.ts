@@ -131,9 +131,28 @@ export async function startContainer(id: string): Promise<{ success: boolean }> 
   }
 }
 
+export async function pruneDocker(): Promise<{ success: boolean; output?: string }> {
+  try {
+    return await agentFetch<{ success: boolean; output?: string }>('/prune', { method: 'POST' })
+  } catch (error) {
+    console.error('[DockerService] pruneDocker failed:', error)
+    return { success: false }
+  }
+}
+
 export async function getHostMetrics(): Promise<HostMetricsResponse | null> {
   try {
-    return await agentFetch<HostMetricsResponse>('/host/metrics')
+    const raw = await agentFetch<any>('/host/metrics')
+    return {
+      hostName: raw.hostName ?? raw.host_name ?? 'unknown',
+      cpuPercent: raw.cpuPercent ?? raw.cpu_percent ?? 0,
+      ramUsedGb: raw.ramUsedGb ?? raw.ram_used_gb ?? 0,
+      ramTotalGb: raw.ramTotalGb ?? raw.ram_total_gb ?? 0,
+      diskUsedGb: raw.diskUsedGb ?? raw.disk_used_gb ?? 0,
+      diskTotalGb: raw.diskTotalGb ?? raw.disk_total_gb ?? 0,
+      loadAverage: raw.loadAverage ?? raw.load_average ?? [],
+      uptimeSeconds: raw.uptimeSeconds ?? raw.uptime_seconds ?? 0,
+    }
   } catch (error) {
     console.error('[DockerService] getHostMetrics failed:', error)
     return null

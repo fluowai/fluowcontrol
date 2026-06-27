@@ -1,12 +1,34 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SystemMetrics } from '../types';
-import { Database, HardDrive, Server, Shield, RefreshCw, AlertCircle, CheckCircle2, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { Database, HardDrive, Server, Shield, RefreshCw, AlertCircle, CheckCircle2, Link as LinkIcon, Loader2, Plus, LockKeyhole, Terminal } from 'lucide-react';
+import { api } from '../api';
 
 interface InfraestruturaProps {
   metrics: SystemMetrics;
   onRestartDockerContainer: (id: string) => void;
   onScaleCluster: () => void;
   onAddAuditLog: (acao: string, detalhes: string) => void;
+}
+
+interface VpsHost {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  status: string;
+  lastError?: string;
+  lastSeenAt?: string;
+  latestMetric?: {
+    cpuPercent?: string | number;
+    ramUsedGb?: string | number;
+    ramTotalGb?: string | number;
+    diskUsedGb?: string | number;
+    diskTotalGb?: string | number;
+    diskUsedPct?: string | number;
+    uptimeSeconds?: number;
+    collectedAt?: string;
+  };
 }
 
 export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScaleCluster, onAddAuditLog }: InfraestruturaProps) {
@@ -18,6 +40,38 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [fetchError, setFetchError] = useState('');
+  const [vpsHosts, setVpsHosts] = useState<VpsHost[]>([]);
+  const [vpsForm, setVpsForm] = useState({ name: '', host: '', port: 22, username: 'root', password: '' });
+  const [vpsLoading, setVpsLoading] = useState(false);
+  const [vpsMessage, setVpsMessage] = useState('');
+  const [isPruning, setIsPruning] = useState(false);
+
+  const handlePruneDocker = async () => {
+    if (!window.confirm('Tem certeza que deseja limpar as imagens Docker e dados não utilizados? Isso liberará espaço no servidor.')) return;
+    setIsPruning(true);
+    try {
+      const result = await api.infra.pruneDocker();
+      alert(result.message || 'Limpeza do Docker executada com sucesso.');
+      onAddAuditLog('Limpeza Docker', 'Limpeza do sistema Docker (prune -af) executada para liberar espaço em disco.');
+    } catch (err: any) {
+      alert('Erro ao limpar docker: ' + err.message);
+    } finally {
+      setIsPruning(false);
+    }
+  };
+
+  const loadVpsHosts = async () => {
+    try {
+      const hosts = await api.vps.hosts();
+      setVpsHosts(hosts);
+    } catch {
+      setVpsHosts([]);
+    }
+  };
+
+  useEffect(() => {
+    loadVpsHosts();
+  }, []);
 
   const handleSyncUrls = async () => {
     if (!supabaseUrl && !minioUrl) return;
@@ -82,6 +136,54 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
     onRestartDockerContainer(id);
     onAddAuditLog('Reboot Container', `Container Docker "${name}" reiniciado com sucesso via painel administrativo.`);
   };
+
+  const handleTestVps = async () => {
+    setVpsLoading(true);
+    setVpsMessage('');
+    try {
+      const result = await api.vps.test(vpsForm);
+      setVpsMessage(`Conexão OK: ${result.output || 'SSH ativo'}`);
+    } catch (err: any) {
+      setVpsMessage(err.message || 'Falha ao testar SSH.');
+    } finally {
+      setVpsLoading(false);
+    }
+  };
+
+  const handleAddVps = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setVpsLoading(true);
+    setVpsMessage('');
+    try {
+      const created = await api.vps.createHost(vpsForm);
+      await api.vps.collect(created.id).catch(() => null);
+      setVpsForm({ name: '', host: '', port: 22, username: 'root', password: '' });
+      setVpsMessage('VPS cadastrada e coleta inicial solicitada.');
+      onAddAuditLog('Cadastro VPS SSH', `Host ${created.name} (${created.host}) adicionado ao monitoramento.`);
+      await loadVpsHosts();
+    } catch (err: any) {
+      setVpsMessage(err.message || 'Falha ao cadastrar VPS.');
+    } finally {
+      setVpsLoading(false);
+    }
+  };
+
+  const handleCollectVps = async (host: VpsHost) => {
+    setVpsLoading(true);
+    setVpsMessage('');
+    try {
+      await api.vps.collect(host.id);
+      setVpsMessage(`Métricas atualizadas para ${host.name}.`);
+      onAddAuditLog('Coleta VPS SSH', `Métricas de disco/RAM/CPU coletadas para ${host.name}.`);
+      await loadVpsHosts();
+    } catch (err: any) {
+      setVpsMessage(err.message || 'Falha ao coletar métricas da VPS.');
+    } finally {
+      setVpsLoading(false);
+    }
+  };
+
+  const pct = (value: any) => Math.max(0, Math.min(100, Number(value || 0)));
 
   const getContainerStatusStyle = (status: string) => {
     switch (status) {
@@ -213,6 +315,138 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
               </span>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="premium-card">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-[18px] font-bold text-[#0F172A]">Monitoramento de VPS por SSH</h3>
+            <p className="text-[14px] text-[#475569] mt-1">Cadastre IP, porta, usuário e senha SSH para medir disco, RAM, CPU, load average e uptime.</p>
+          </div>
+          <LockKeyhole className="w-5 h-5 text-[#475569]" />
+        </div>
+
+        <form onSubmit={handleAddVps} className="grid grid-cols-1 lg:grid-cols-6 gap-3 mb-6">
+          <input
+            type="text"
+            placeholder="Nome da VPS"
+            value={vpsForm.name}
+            onChange={(e) => setVpsForm(prev => ({ ...prev, name: e.target.value }))}
+            className="lg:col-span-1 bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] outline-none focus:border-[#22C55E]"
+            required
+          />
+          <input
+            type="text"
+            placeholder="IP ou host"
+            value={vpsForm.host}
+            onChange={(e) => setVpsForm(prev => ({ ...prev, host: e.target.value }))}
+            className="lg:col-span-1 bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] outline-none focus:border-[#22C55E]"
+            required
+          />
+          <input
+            type="number"
+            placeholder="Porta"
+            value={vpsForm.port}
+            onChange={(e) => setVpsForm(prev => ({ ...prev, port: Number(e.target.value) || 22 }))}
+            className="lg:col-span-1 bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] outline-none focus:border-[#22C55E]"
+            required
+          />
+          <input
+            type="text"
+            placeholder="Usuário SSH"
+            value={vpsForm.username}
+            onChange={(e) => setVpsForm(prev => ({ ...prev, username: e.target.value }))}
+            className="lg:col-span-1 bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] outline-none focus:border-[#22C55E]"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Senha SSH"
+            value={vpsForm.password}
+            onChange={(e) => setVpsForm(prev => ({ ...prev, password: e.target.value }))}
+            className="lg:col-span-1 bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-2 text-[14px] outline-none focus:border-[#22C55E]"
+            required
+          />
+          <div className="lg:col-span-1 flex gap-2">
+            <button
+              type="button"
+              onClick={handleTestVps}
+              disabled={vpsLoading || !vpsForm.host || !vpsForm.username || !vpsForm.password}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-[#E7ECE8] rounded-lg text-[13px] font-bold text-[#0F172A] hover:bg-[#F8FAF8] disabled:opacity-50"
+            >
+              <Terminal className="w-4 h-4" />
+              Testar
+            </button>
+            <button
+              type="submit"
+              disabled={vpsLoading}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-[#0F172A] text-white rounded-lg text-[13px] font-bold hover:bg-[#1e293b] disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4" />
+              Salvar
+            </button>
+          </div>
+        </form>
+
+        {vpsMessage && (
+          <div className="mb-5 text-[13px] font-semibold text-[#475569] bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-3">
+            {vpsMessage}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {vpsHosts.length === 0 ? (
+            <div className="md:col-span-2 xl:col-span-3 border border-dashed border-[#E7ECE8] rounded-lg p-6 text-[14px] text-[#475569]">
+              Nenhuma VPS cadastrada ainda. Preencha os dados acima para iniciar o monitoramento.
+            </div>
+          ) : vpsHosts.map(host => {
+            const metric = host.latestMetric;
+            const diskPct = pct(metric?.diskUsedPct);
+            const ramPct = metric?.ramTotalGb ? pct((Number(metric.ramUsedGb) / Number(metric.ramTotalGb)) * 100) : 0;
+            const cpuPct = pct(metric?.cpuPercent);
+
+            return (
+              <div key={host.id} className="border border-[#E7ECE8] rounded-lg p-4 bg-[#F8FAF8] space-y-4">
+                <div className="flex justify-between items-start gap-3">
+                  <div>
+                    <h4 className="text-[15px] font-bold text-[#0F172A]">{host.name}</h4>
+                    <p className="text-[12px] font-mono text-[#475569]">{host.username}@{host.host}:{host.port}</p>
+                  </div>
+                  <span className={`text-[11px] font-bold px-2 py-1 rounded ${host.status === 'online' ? 'bg-[#DCFCE7] text-[#14532D]' : 'bg-rose-50 text-rose-700'}`}>
+                    {host.status}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-[12px] font-bold text-[#475569] mb-1"><span>Disco</span><span>{metric?.diskUsedGb || 0} / {metric?.diskTotalGb || 0} GB</span></div>
+                    <div className="h-2 bg-white rounded-full overflow-hidden"><div className="h-full bg-[#22C55E]" style={{ width: `${diskPct}%` }} /></div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[12px] font-bold text-[#475569] mb-1"><span>RAM</span><span>{metric?.ramUsedGb || 0} / {metric?.ramTotalGb || 0} GB</span></div>
+                    <div className="h-2 bg-white rounded-full overflow-hidden"><div className="h-full bg-sky-500" style={{ width: `${ramPct}%` }} /></div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[12px] font-bold text-[#475569] mb-1"><span>CPU</span><span>{cpuPct.toFixed(1)}%</span></div>
+                    <div className="h-2 bg-white rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: `${cpuPct}%` }} /></div>
+                  </div>
+                </div>
+
+                {host.lastError && <p className="text-[12px] text-rose-700 font-semibold">{host.lastError}</p>}
+
+                <button
+                  type="button"
+                  onClick={() => handleCollectVps(host)}
+                  disabled={vpsLoading}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-white border border-[#E7ECE8] rounded-lg text-[13px] font-bold hover:bg-[#F1F5F9] disabled:opacity-50"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Coletar agora
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -363,8 +597,16 @@ export function InfraestruturaModule({ metrics, onRestartDockerContainer, onScal
 
       {/* Docker Containers Detailed List & Controls */}
       <div className="premium-card overflow-hidden !p-0">
-        <div className="p-6 border-b border-[#E7ECE8] flex justify-between items-center">
+        <div className="p-6 border-b border-[#E7ECE8] flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
           <h3 className="text-[18px] font-bold text-[#0F172A]">Serviços Docker Internos</h3>
+          <button 
+            onClick={handlePruneDocker}
+            disabled={isPruning}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 font-semibold text-[13px] rounded-lg shadow-sm transition-colors disabled:opacity-50"
+          >
+            {isPruning ? <Loader2 className="w-4 h-4 animate-spin" /> : <HardDrive className="w-4 h-4" />}
+            Limpar Disco (Docker Prune)
+          </button>
         </div>
 
         <div className="overflow-x-auto">

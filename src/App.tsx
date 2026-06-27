@@ -37,7 +37,7 @@ import { ConhecimentoModule } from './components/ConhecimentoModule';
 import { AuditoriaModule } from './components/AuditoriaModule';
 import { IaModule } from './components/IaModule';
 
-import { api, setApiKey, getApiKey } from './api';
+import { api, clearAuthSession, getAuthToken, getAuthUser, setAuthSession } from './api';
 
 import {
   LayoutDashboard,
@@ -65,7 +65,9 @@ import {
   Search,
   Bell,
   FileText,
-  DollarSign
+  DollarSign,
+  LogOut,
+  KeyRound
 } from 'lucide-react';
 
 type ModuleType =
@@ -114,12 +116,101 @@ function mapInvoiceToFrontend(i: any): Invoice {
 function mapUserToFrontend(u: any): AppUser {
   return { id: u.id, nome: u.name, email: u.email, role: mapRole(u.role), departamento: u.department || '', equipe: u.team || '', permissoes: [] }
 }
-function mapRole(r: string): any { const m: Record<string, any> = { owner: 'Owner', admin: 'Admin', suporte: 'Suporte', financeiro: 'Financeiro', viewer: 'Operação' }; return m[r] || 'Operação' }
+function mapRole(r: string): any { const m: Record<string, any> = { owner: 'Owner', admin: 'Admin', suporte: 'Suporte', financeiro: 'Financeiro', viewer: 'Operação', infra: 'Operação' }; return m[r] || 'Operação' }
+function mapWhatsAppToFrontend(w: any): WhatsAppInstance {
+  const statusMap: Record<string, WhatsAppInstance['status']> = {
+    connected: 'Online',
+    disconnected: 'Offline',
+    banned: 'Offline',
+    error: 'Offline',
+    unknown: 'Offline',
+    qr_required: 'Aguardando QR Code',
+    pairing: 'Aguardando QR Code',
+  };
+  return {
+    id: w.id,
+    nome: w.instanceName,
+    clienteId: w.organizationId,
+    status: statusMap[w.status] || (w.qrRequired ? 'Aguardando QR Code' : 'Offline'),
+    qrCode: w.qrRequired ? 'https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg' : undefined,
+    phone: w.phoneNumber || w.phoneConnected || '',
+    conversasCount: (w.messagesSent24h || 0) + (w.messagesReceived24h || 0),
+    mensagens: [],
+  }
+}
+function mapBucketToFrontend(b: any): MinIOBucket {
+  const sizeBytes = Math.round(Number(b.sizeMb || 0) * 1024 * 1024);
+  return {
+    id: b.id,
+    nome: b.bucketName,
+    clienteId: b.organizationId || undefined,
+    produtoSlug: b.product?.slug,
+    espacoBytes: sizeBytes,
+    arquivosCount: b.totalObjects || 0,
+    arquivos: b.totalObjects ? [{
+      id: `${b.id}-snapshot`,
+      nome: `${b.bucketName}-snapshot.json`,
+      tamanhoBytes: sizeBytes,
+      versao: 1,
+      dataCriacao: b.collectedAt || new Date().toISOString(),
+    }] : [],
+  }
+}
+function mapAuditToFrontend(a: any): AuditLog {
+  return {
+    id: a.id,
+    usuario: a.user?.name || a.user?.email || 'Sistema',
+    role: mapRole(a.user?.role || 'admin'),
+    data: a.createdAt,
+    ip: a.ipAddress || '-',
+    acao: a.action,
+    detalhes: a.metadata?.descricao || a.metadata?.description || JSON.stringify(a.metadata || {}),
+  }
+}
+function mapInfraDashboardToMetrics(data: any, fallback: SystemMetrics): SystemMetrics {
+  const containers = (data?.containers || []).map((c: any) => ({
+    id: c.id,
+    nome: c.name,
+    status: c.state === 'running' ? 'Running' : c.state === 'restarting' ? 'Restarting' : 'Exited',
+    cpu: `${Number(c.cpuPercent || 0).toFixed(1)}%`,
+    mem: c.memoryUsageMb ? `${(Number(c.memoryUsageMb) / 1024).toFixed(1)} GB` : '0 MB',
+    port: Array.isArray(c.ports) ? c.ports.map((p: any) => `${p.hostPort || p.host || ''}:${p.containerPort || p.container || ''}`).join(', ') : '',
+  }));
+
+  const host = data?.hostMetric;
+  const pg = data?.pgMetric;
+
+  return {
+    ...fallback,
+    supabase: {
+      cpu: fallback.supabase.cpu,
+      ram: fallback.supabase.ram,
+      ramMax: fallback.supabase.ramMax,
+      conexoes: pg?.activeConnections ?? fallback.supabase.conexoes,
+      tamanhoBancoMB: Number(pg?.sizeMb || fallback.supabase.tamanhoBancoMB),
+    },
+    servidor: host ? {
+      cpu: Number(host.cpuPercent || 0),
+      ram: Number(host.ramUsedGb || 0),
+      ramMax: `${Number(host.ramTotalGb || 0)} GB`,
+      disco: Number(host.diskUsedGb || 0) / 1000,
+      discoMax: `${Number(host.diskTotalGb || 0) / 1000} TB`,
+      uptime: `${Math.floor(Number(host.uptimeSeconds || 0) / 86400)} dias`,
+    } : fallback.servidor,
+    docker: containers.length ? containers : fallback.docker,
+  }
+}
 
 export default function App() {
   // Navigation
   const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [authToken, setAuthToken] = useState(getAuthToken());
+  const [authUser, setAuthUser] = useState<any>(getAuthUser());
+  const [loginEmail, setLoginEmail] = useState('sandro.moreira@fluowai.com.br');
+  const [loginPassword, setLoginPassword] = useState('admin123');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
 
   // Core Application Live Database State
   const [clients, setClients] = useState<Client[]>([]);
@@ -135,12 +226,16 @@ export default function App() {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  const [backendKey, setBackendKey] = useState(getApiKey());
+  const isAuthenticated = Boolean(authToken);
 
   // API data fetching
   const fetchAllData = useCallback(async () => {
+    if (!authToken) {
+      setLoading(false);
+      return;
+    }
     try {
-      const [orgs, prods, wrks, tcks, invs, usrs, dash] = await Promise.all([
+      const responses = await Promise.allSettled([
         api.organizations.list(),
         api.products.list(),
         api.workspaces.list(),
@@ -148,7 +243,24 @@ export default function App() {
         api.financeiro.invoices(),
         api.users.list(),
         api.metrics.dashboard(),
-      ]).catch(() => [null, null, null, null, null, null, null]);
+        api.whatsapp.instances(),
+        api.storage.buckets(),
+        api.infra.dashboard(),
+        api.audit.list(),
+      ]);
+      const [
+        orgs,
+        prods,
+        wrks,
+        tcks,
+        invs,
+        usrs,
+        dash,
+        wpp,
+        storageBuckets,
+        infraDash,
+        auditPage,
+      ] = responses.map((r) => r.status === 'fulfilled' ? r.value : null);
 
       if (orgs) setClients(orgs.map(mapOrgToClient));
       if (prods) setProducts(prods.map(mapProductToFrontend));
@@ -157,33 +269,68 @@ export default function App() {
       if (invs) setInvoices(invs.map(mapInvoiceToFrontend));
       if (usrs) setUsers(usrs.map(mapUserToFrontend));
       if (dash) setDashboardData(dash);
+      if (wpp) setWhatsAppInstances(wpp.map(mapWhatsAppToFrontend));
+      if (storageBuckets) setBuckets(storageBuckets.map(mapBucketToFrontend));
+      if (infraDash) setMetrics(prev => mapInfraDashboardToMetrics(infraDash, prev));
+      if (auditPage) setAuditLogs((auditPage.data || auditPage).map(mapAuditToFrontend));
     } catch (err) {
       console.warn('API fetch error (using defaults):', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authToken]);
 
   useEffect(() => { fetchAllData() }, [fetchAllData]);
 
   // Re-fetch dashboard metrics periodically
   useEffect(() => {
+    if (!authToken) return;
     const interval = setInterval(async () => {
       try {
-        const dash = await api.metrics.dashboard();
+        const [dash, infraDash] = await Promise.all([api.metrics.dashboard(), api.infra.dashboard()]);
         if (dash) setDashboardData(dash);
+        if (infraDash) setMetrics(prev => mapInfraDashboardToMetrics(infraDash, prev));
       } catch {}
     }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [authToken]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const result = await api.auth.login(loginEmail.trim(), loginPassword);
+      setAuthSession(result.token, result.user);
+      setAuthToken(result.token);
+      setAuthUser(result.user);
+      setLoading(true);
+    } catch (err: any) {
+      setLoginError(err.message || 'Não foi possível autenticar.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setAuthToken('');
+    setAuthUser(null);
+    setClients([]);
+    setWorkspaces([]);
+    setTickets([]);
+    setInvoices([]);
+    setUsers([]);
+    setDashboardData(null);
+  };
 
   // Dynamic Audit Helper
   const addAuditLogEntry = (acao: string, detalhes: string) => {
     const newLog: AuditLog = {
       id: `log-${Date.now()}`,
       data: new Date().toISOString(),
-      usuario: 'Lucas Pinheiro (Lucas)', // Simulated logged-in session user
-      role: 'Owner',
+      usuario: authUser?.name || 'Sistema',
+      role: mapRole(authUser?.role || 'owner'),
       acao,
       detalhes,
       ip: '192.168.15.22'
@@ -342,7 +489,7 @@ export default function App() {
     setWhatsAppInstances(prev =>
       prev.map(wi => {
         if (wi.id === instanceId) {
-          return { ...wi, mensagens: [...wi.mensagens, { id: `msg-${Date.now()}`, deUser: true, texto: text, data: new Date().toISOString() }] };
+          return { ...wi, mensagens: [...wi.mensagens, { id: `msg-${Date.now()}`, deUser: true, texto: text, contatoNome: 'Operador Fluow', contatoPhone: wi.phone, data: new Date().toISOString() }] };
         }
         return wi;
       })
@@ -461,34 +608,32 @@ export default function App() {
     {
       group: 'Comercial',
       items: [
-        { id: 'crm', label: 'CRM', icon: Building },
-        { id: 'pipeline', label: 'Pipeline', icon: Activity },
-        { id: 'propostas', label: 'Propostas', icon: FileText },
-        { id: 'receita', label: 'Receita', icon: DollarSign }
+        { id: 'clientes', label: 'CRM', icon: Building },
+        { id: 'financeiro', label: 'Receita', icon: DollarSign },
+        { id: 'auditoria', label: 'Contratos & Logs', icon: FileText }
       ]
     },
     {
       group: 'Suporte',
       items: [
-        { id: 'tickets', label: 'Tickets', icon: MessageSquare },
-        { id: 'sla', label: 'SLA', icon: Clock },
+        { id: 'suporte', label: 'Tickets', icon: MessageSquare },
+        { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
         { id: 'conhecimento', label: 'Base de Conhecimento', icon: BookOpen }
       ]
     },
     {
       group: 'IA Fluow',
       items: [
-        { id: 'copilot', label: 'Copilot', icon: Sparkles, highlight: true },
-        { id: 'insights', label: 'Insights', icon: Zap },
-        { id: 'agentes', label: 'Agentes IA', icon: Bot }
+        { id: 'ia', label: 'Copilot', icon: Sparkles, highlight: true }
       ]
     },
     {
       group: 'Configurações',
       items: [
-        { id: 'equipe', label: 'Equipe', icon: User },
-        { id: 'permissoes', label: 'Permissões', icon: ShieldCheck },
-        { id: 'infra', label: 'Infraestrutura', icon: HardDrive }
+        { id: 'usuarios', label: 'Equipe', icon: User },
+        { id: 'storage', label: 'Storage MinIO', icon: HardDrive },
+        { id: 'infra', label: 'Infraestrutura', icon: ShieldCheck },
+        { id: 'auditoria', label: 'Auditoria', icon: History }
       ]
     }
   ];
@@ -614,6 +759,61 @@ export default function App() {
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#F8FAF8] text-[#0F172A] flex items-center justify-center p-6 font-sans">
+        <form onSubmit={handleLogin} className="w-full max-w-md bg-white border border-[#E7ECE8] rounded-xl shadow-sm p-8 space-y-6">
+          <div className="space-y-2">
+            <div className="h-11 w-11 rounded-lg bg-[#DCFCE7] text-[#14532D] flex items-center justify-center">
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-[24px] font-bold tracking-tight">Fluow Control Center</h1>
+              <p className="text-[15px] text-[#475569] mt-1">Entre com sua conta interna para acessar a visão 360.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[13px] font-semibold text-[#475569]">Email</label>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-3 text-[14px] outline-none focus:border-[#22C55E]"
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[13px] font-semibold text-[#475569]">Senha</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full bg-[#F8FAF8] border border-[#E7ECE8] rounded-lg px-4 py-3 text-[14px] outline-none focus:border-[#22C55E]"
+                autoComplete="current-password"
+              />
+            </div>
+          </div>
+
+          {loginError && (
+            <div className="text-[13px] font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-4 py-3">
+              {loginError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loginLoading}
+            className="w-full flex items-center justify-center gap-2 bg-[#0F172A] hover:bg-[#1e293b] text-white rounded-lg px-4 py-3 text-[14px] font-bold disabled:opacity-60"
+          >
+            {loginLoading ? 'Entrando...' : 'Entrar no painel'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAF8] text-[#0F172A] flex font-sans leading-normal overflow-hidden animate-fade-in antialiased scroll-smooth">
       
@@ -690,8 +890,8 @@ export default function App() {
               A
             </div>
             <div className="min-w-0">
-              <span className="font-semibold text-[#0F172A] leading-tight block truncate text-base">Alvax</span>
-              <span className="text-[14px] text-[#475569] block leading-tight mt-0.5">Fluow Inc.</span>
+              <span className="font-semibold text-[#0F172A] leading-tight block truncate text-base">{authUser?.name || 'Fluow'}</span>
+              <span className="text-[14px] text-[#475569] block leading-tight mt-0.5">{authUser?.role || 'Operação'}</span>
             </div>
           </div>
         </div>
@@ -713,25 +913,15 @@ export default function App() {
             )}
 
             <div className="hidden sm:flex flex-col">
-              <h2 className="text-[20px] font-bold text-[#0F172A] tracking-tight">Bom dia, Alvax 👋</h2>
-              <p className="text-[15px] text-[#475569]">Sua operação está saudável hoje.</p>
+              <h2 className="text-[20px] font-bold text-[#0F172A] tracking-tight">Bom dia, {authUser?.name?.split(' ')[0] || 'Fluow'}</h2>
+              <p className="text-[15px] text-[#475569]">Sua operação central está sincronizada.</p>
             </div>
           </div>
 
           <div className="flex items-center gap-6">
-            <div className="hidden md:flex items-center gap-3 text-[15px] font-medium text-[#0F172A] bg-[#F8FAF8] border border-[#E7ECE8] px-4 py-2 rounded-lg shadow-sm">
-              <input 
-                type="password" 
-                placeholder="Backend API Key" 
-                value={backendKey}
-                onChange={(e) => {
-                  setBackendKey(e.target.value);
-                  setApiKey(e.target.value);
-                }}
-                onBlur={() => fetchAllData()}
-                onKeyDown={(e) => e.key === 'Enter' && fetchAllData()}
-                className="bg-transparent border-none p-0 focus:ring-0 w-32 outline-none text-[#0F172A] placeholder-[#475569]" 
-              />
+            <div className="hidden lg:flex items-center gap-3 text-[14px] font-semibold text-[#0F172A] bg-[#F8FAF8] border border-[#E7ECE8] px-4 py-2 rounded-lg shadow-sm">
+              <User className="w-4 h-4 text-[#475569]" />
+              <span>{authUser?.name || authUser?.email || 'Usuário interno'}</span>
             </div>
 
             <div className="hidden md:flex items-center gap-3 text-[15px] font-medium text-[#0F172A] bg-[#F8FAF8] border border-[#E7ECE8] px-4 py-2 rounded-lg shadow-sm">
@@ -742,6 +932,13 @@ export default function App() {
             <button className="relative p-2 text-[#475569] hover:text-[#0F172A] transition-colors rounded-full hover:bg-[#F1F5F9]">
               <Bell className="w-6 h-6" />
               <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border border-white"></span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-[#475569] hover:text-[#0F172A] transition-colors rounded-full hover:bg-[#F1F5F9]"
+              title="Sair"
+            >
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         </header>

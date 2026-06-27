@@ -8,6 +8,11 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { GoogleGenAI } from '@google/genai';
 
+import logger from './server/lib/logger.js';
+import prisma from './server/lib/prisma.js';
+import { errorHandler, notFoundHandler } from './server/lib/error-handler.js';
+import { standardLimiter } from './server/lib/rate-limiter.js';
+
 import { registerRoutes as registerAuthRoutes } from './server/api/routes/auth.js';
 import { registerRoutes as registerOrgRoutes } from './server/api/routes/organizations.js';
 import { registerRoutes as registerProductRoutes } from './server/api/routes/products.js';
@@ -23,9 +28,14 @@ import { registerRoutes as registerAlertRoutes } from './server/api/routes/alert
 import { registerRoutes as registerEventRoutes } from './server/api/routes/events.js';
 import { registerRoutes as registerMetricsRoutes } from './server/api/routes/metrics.js';
 import { registerRoutes as registerDashboardRoutes } from './server/api/routes/dashboard.js';
+import { registerRoutes as registerVpsRoutes } from './server/api/routes/vps.js';
+import { registerRoutes as registerSupabaseRoutes } from './server/api/routes/supabase.js';
 import { setupRealtime } from './server/realtime/index.js';
 
 dotenv.config();
+
+const isProduction = process.env.NODE_ENV === 'production';
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -36,7 +46,7 @@ function getGeminiClient(): GoogleGenAI {
     }
     aiClient = new GoogleGenAI({
       apiKey: key,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      httpOptions: { headers: { 'User-Agent': 'fluow-control-center' } },
     });
   }
   return aiClient;
@@ -44,15 +54,81 @@ function getGeminiClient(): GoogleGenAI {
 
 const app = express();
 const httpServer = createHttpServer(app);
-const PORT = parseInt(process.env.PORT || '3000', 10);
 
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000', process.env.APP_URL || ''].filter(Boolean), credentials: true }));
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  process.env.APP_URL || '',
+].filter(Boolean);
+
+app.use(cors({
+  origin: isProduction
+    ? (process.env.APP_URL || '').split(',').filter(Boolean)
+    : allowedOrigins,
+  credentials: true,
+}));
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(morgan('short'));
+app.use(morgan(isProduction ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Register all API routes
+app.use(standardLimiter);
+
+const startTime = Date.now();
+let dbStatus: 'ok' | 'error' = 'ok';
+let queueStatus: 'ok' | 'error' = 'ok';
+
+app.get('/api/health/live', (_req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), time: new Date().toISOString() });
+});
+
+app.get('/api/health/ready', async (_req, res) => {
+  const checks: Record<string, string> = {};
+  let allOk = true;
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = 'ok';
+  } catch {
+    checks.database = 'error';
+    dbStatus = 'error';
+    allOk = false;
+  }
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = 'ok';
+  } catch {
+    checks.database = 'error';
+    allOk = false;
+  }
+
+  const status = allOk ? 'ok' : 'degraded';
+  res.status(allOk ? 200 : 503).json({
+    status,
+    product: 'Fluow Control Center',
+    version: '1.0.0',
+    database: checks.database || 'unknown',
+    uptime: process.uptime(),
+    time: new Date().toISOString(),
+  });
+});
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: dbStatus === 'ok' ? 'ok' : 'degraded',
+    product: 'Fluow Control Center',
+    version: '1.0.0',
+    database: dbStatus,
+    queue: queueStatus,
+    uptime: process.uptime(),
+    time: new Date().toISOString(),
+    startedAt: new Date(startTime).toISOString(),
+  });
+});
+
 registerAuthRoutes(app);
 registerOrgRoutes(app);
 registerProductRoutes(app);
@@ -68,21 +144,9 @@ registerAlertRoutes(app);
 registerEventRoutes(app);
 registerMetricsRoutes(app);
 registerDashboardRoutes(app);
+registerVpsRoutes(app);
+registerSupabaseRoutes(app);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    product: 'Fluow Control Center',
-    version: '1.0.0',
-    database: 'ok',
-    queue: 'ok',
-    uptime: process.uptime(),
-    time: new Date().toISOString(),
-  });
-});
-
-// Gemini AI Copilot endpoint
 app.post('/api/ai/chat', async (req, res) => {
   const { message, systemContext, history } = req.body;
   try {
@@ -113,14 +177,14 @@ ${JSON.stringify(systemContext || {}, null, 2)}
     contents.push({ role: 'user', parts: [{ text: message }] });
 
     const response = await aiInstance.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.0-flash',
       contents,
       config: { systemInstruction: customInstruction, temperature: 0.3 },
     });
 
     res.json({ text: response.text || 'Desculpe, não consegui processar a resposta do modelo.' });
   } catch (error: any) {
-    console.error('Gemini API Error:', error);
+    logger.error({ err: error }, 'Gemini API Error');
     res.status(500).json({
       error: error.message || 'Erro interno ao processar inteligência artificial.',
       isMissingKey: !process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MY_GEMINI_API_KEY',
@@ -128,12 +192,13 @@ ${JSON.stringify(systemContext || {}, null, 2)}
   }
 });
 
-// Setup WebSocket/Realtime
 const io = setupRealtime(httpServer);
 
-// Configure Vite integration
+app.use(notFoundHandler);
+app.use(errorHandler);
+
 const startServer = async () => {
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -142,17 +207,38 @@ const startServer = async () => {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Fluow Control Center] Running at http://localhost:${PORT}`);
-    console.log(`[Fluow Control Center] WebSocket/Realtime at ws://localhost:${PORT}`);
+    logger.info({ port: PORT, env: process.env.NODE_ENV || 'development' }, 'Fluow Control Center started');
   });
 };
 
 startServer().catch((err) => {
-  console.error('Failed to start Fluow Control Center backend:', err);
+  logger.error({ err }, 'Failed to start Fluow Control Center');
+  process.exit(1);
 });
+
+function shutdown(signal: string) {
+  logger.info({ signal }, 'Shutdown signal received');
+  httpServer.close(async () => {
+    logger.info('HTTP server closed');
+    await prisma.$disconnect();
+    logger.info('Database connections closed');
+    io.close();
+    logger.info('WebSocket server closed');
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 15000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

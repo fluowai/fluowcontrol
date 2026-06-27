@@ -1,32 +1,12 @@
-version: '3.8'
-
 name: fluow-control-center
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: fluow-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: fluow_control
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - fluow-network
 
   redis:
     image: redis:7-alpine
     container_name: fluow-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -36,17 +16,18 @@ services:
       retries: 5
     networks:
       - fluow-network
+    restart: unless-stopped
 
   minio:
     image: minio/minio:latest
     container_name: fluow-minio
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     volumes:
       - minio_data:/data
     healthcheck:
@@ -54,8 +35,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
     networks:
       - fluow-network
+    restart: unless-stopped
 
   control-center:
     build:
@@ -63,26 +46,29 @@ services:
       dockerfile: Dockerfile
     container_name: fluow-control-center
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fluow_control
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_USE_SSL: "false"
-      JWT_SECRET: change-this-jwt-secret-in-production
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
       FLUOW_AGENT_URL: http://fluow-agent:3001
-      FLUOW_AGENT_API_KEY: fluow-agent-secret-key-change-in-production
-      INTERNAL_API_KEY: fluow-internal-secret-key-change-in-production
-      APP_URL: http://localhost:3000
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      APP_URL: ${APP_URL:-http://localhost:3000}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -94,11 +80,9 @@ services:
       context: .
       dockerfile: Dockerfile.agent
     container_name: fluow-agent
-    ports:
-      - "3001:3001"
     environment:
       FLUOW_AGENT_PORT: 3001
-      FLUOW_AGENT_API_KEY: fluow-agent-secret-key-change-in-production
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -111,19 +95,24 @@ services:
       dockerfile: Dockerfile.worker
     container_name: fluow-metrics-worker
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fluow_control
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_USE_SSL: "false"
       FLUOW_AGENT_URL: http://fluow-agent:3001
-      FLUOW_AGENT_API_KEY: fluow-agent-secret-key-change-in-production
-      INTERNAL_API_KEY: fluow-internal-secret-key-change-in-production
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      WORKER_TARGET: server/workers/metrics.ts
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -136,29 +125,30 @@ services:
       dockerfile: Dockerfile.worker
     container_name: fluow-alert-worker
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fluow_control
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_USE_SSL: "false"
       FLUOW_AGENT_URL: http://fluow-agent:3001
-      FLUOW_AGENT_API_KEY: fluow-agent-secret-key-change-in-production
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      WORKER_TARGET: server/workers/alerts.ts
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - fluow-network
     restart: unless-stopped
 
-networks:
-  fluow-network:
-    driver: bridge
-
 volumes:
-  postgres_data:
   redis_data:
   minio_data:

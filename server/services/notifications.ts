@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client'
+import prisma from '../lib/prisma.js'
 import type { NotificationSeverity, UserRole } from '../types/index.js'
-
-const prisma = new PrismaClient()
 
 interface NotificationResponse {
   id: string

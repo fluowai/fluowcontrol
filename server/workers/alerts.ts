@@ -1,6 +1,5 @@
-import { PrismaClient, type AlertSeverity } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import type { AlertSeverity } from '@prisma/client'
+import prisma from '../lib/prisma.js'
 
 const CHECK_INTERVAL = 30_000
 
@@ -398,4 +397,8 @@ export function runAlertWorker(): () => void {
     clearInterval(id)
     console.log('[Alerts] Worker stopped')
   }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runAlertWorker()
 }

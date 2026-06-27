@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { encryptSecret, decryptSecret } from './crypto.js'
 
 const prisma = new PrismaClient()
 
@@ -33,24 +34,9 @@ interface PortainerConnection {
   createdAt: Date
 }
 
-function encryptApiKey(plaintext: string): string {
-  const key = 'fluow-portainer-key-2024'
-  let result = ''
-  for (let i = 0; i < plaintext.length; i++) {
-    result += String.fromCharCode(plaintext.charCodeAt(i) ^ key.charCodeAt(i % key.length))
-  }
-  return Buffer.from(result, 'utf-8').toString('base64')
-}
 
-function decryptApiKey(encoded: string): string {
-  const key = 'fluow-portainer-key-2024'
-  const bytes = Buffer.from(encoded, 'base64').toString('utf-8')
-  let result = ''
-  for (let i = 0; i < bytes.length; i++) {
-    result += String.fromCharCode(bytes.charCodeAt(i) ^ key.charCodeAt(i % key.length))
-  }
-  return result
-}
+
+
 
 export class PortainerService {
   private baseUrl = ''
@@ -75,7 +61,7 @@ export class PortainerService {
           where: { id: existing.id },
           data: {
             baseUrl: config.baseUrl,
-            apiKeyEncrypted: encryptApiKey(config.apiKey),
+            apiKeyEncrypted: encryptSecret(config.apiKey) ?? '',
             status: 'active',
           },
         })
@@ -84,7 +70,7 @@ export class PortainerService {
           data: {
             name: config.name,
             baseUrl: config.baseUrl,
-            apiKeyEncrypted: encryptApiKey(config.apiKey),
+            apiKeyEncrypted: encryptSecret(config.apiKey) ?? '',
             status: 'active',
           },
         })
@@ -220,7 +206,7 @@ export class PortainerService {
       if (!conn) return false
 
       this.baseUrl = conn.baseUrl
-      this.apiKey = decryptApiKey(conn.apiKeyEncrypted)
+      this.apiKey = decryptSecret(conn.apiKeyEncrypted) ?? ''
       this.connected = true
       return true
     } catch {

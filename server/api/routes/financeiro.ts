@@ -1,9 +1,7 @@
 import { Router } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../../lib/prisma.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { requireMinimumRole } from '../middleware/rbac.js'
-
-const prisma = new PrismaClient()
+import { requireRole, requireMinimumRole } from '../middleware/rbac.js'
 const router = Router()
 
 export function registerRoutes(app: import('express').Express) {

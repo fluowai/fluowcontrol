@@ -1,10 +1,8 @@
 import { Server as HttpServer } from 'http'
 import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
-import { PrismaClient } from '@prisma/client'
 import type { JwtPayload } from '../types/index.js'
-
-const prisma = new PrismaClient()
+import prisma from '../lib/prisma.js'
 const JWT_SECRET = process.env.JWT_SECRET || 'fluow-control-center-dev-secret'
 
 let io: Server | null = null

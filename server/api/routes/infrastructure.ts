@@ -1,10 +1,8 @@
 import { Router } from 'express'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../../lib/prisma.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { requireMinimumRole } from '../middleware/rbac.js'
 import * as DockerService from '../../services/docker.js'
-
-const prisma = new PrismaClient()
 const router = Router()
 
 export function registerRoutes(app: import('express').Express) {
@@ -89,6 +87,15 @@ export function registerRoutes(app: import('express').Express) {
         return res.status(404).json({ error: 'Container não encontrado', code: 'NOT_FOUND' })
       }
       const result = await DockerService.startContainer(container.containerId)
+      return res.json(result)
+    } catch (err) {
+      return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })
+    }
+  })
+
+  router.post('/docker/prune', authenticateToken, requireMinimumRole('infra'), async (req: AuthRequest, res) => {
+    try {
+      const result = await DockerService.pruneDocker()
       return res.json(result)
     } catch (err) {
       return res.status(500).json({ error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' })

@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
-import { PrismaClient } from '@prisma/client'
+import prisma from '../../lib/prisma.js'
 import type { JwtPayload, UserRole } from '../../types/index.js'
 
-const prisma = new PrismaClient()
-
 const JWT_SECRET = process.env.JWT_SECRET || 'fluow-control-center-dev-secret'
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'fluow-control-center-dev-secret') {
+  throw new Error('JWT_SECRET precisa ser configurado em producao.')
+}
 
 export interface AuthRequest extends Request {
   user?: JwtPayload & { name?: string }
@@ -45,7 +46,11 @@ export function optionalAuth(req: AuthRequest, res: Response, next: NextFunction
 
 export function requireApiKey(req: AuthRequest, res: Response, next: NextFunction) {
   const apiKey = req.headers['x-api-key'] as string
-  const internalKey = process.env.INTERNAL_API_KEY || 'fluow-internal-secret-key'
+  const internalKey = process.env.INTERNAL_API_KEY
+
+  if (!internalKey) {
+    return res.status(500).json({ error: 'INTERNAL_API_KEY nao configurada', code: 'MISSING_INTERNAL_API_KEY' })
+  }
 
   if (apiKey !== internalKey) {
     return res.status(401).json({ error: 'API key inválida', code: 'INVALID_API_KEY' })

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum OrganizationStatus {
@@ -149,7 +150,7 @@ enum UserRole {
 }
 
 model Organization {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid())
   name      String
   legalName String?  @map("legal_name")
   document  String?
@@ -157,7 +158,7 @@ model Organization {
   phone     String?
   whatsapp  String?
   status    OrganizationStatus @default(active)
-  planId    String?  @map("plan_id") @db.Uuid
+  planId    String?  @map("plan_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -177,7 +178,7 @@ model Organization {
 }
 
 model Product {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(uuid())
   name           String
   slug           String        @unique
   description    String?
@@ -197,9 +198,9 @@ model Product {
 }
 
 model Workspace {
-  id               String          @id @default(uuid()) @db.Uuid
-  organizationId   String          @map("organization_id") @db.Uuid
-  productId        String          @map("product_id") @db.Uuid
+  id               String          @id @default(uuid())
+  organizationId   String          @map("organization_id")
+  productId        String          @map("product_id")
   name             String
   slug             String
   publicUrl        String?         @map("public_url")
@@ -220,8 +221,8 @@ model Workspace {
 }
 
 model Service {
-  id                 String        @id @default(uuid()) @db.Uuid
-  productId          String        @map("product_id") @db.Uuid
+  id                 String        @id @default(uuid())
+  productId          String        @map("product_id")
   name               String
   type               ServiceType
   dockerContainerName String?       @map("docker_container_name")
@@ -241,7 +242,7 @@ model Service {
 }
 
 model DockerContainer {
-  id              String         @id @default(uuid()) @db.Uuid
+  id              String         @id @default(uuid())
   containerId     String         @unique @map("container_id")
   name            String
   image           String?
@@ -262,7 +263,7 @@ model DockerContainer {
 }
 
 model InfrastructureMetric {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String   @id @default(uuid())
   hostName     String   @map("host_name")
   cpuPercent   Decimal? @map("cpu_percent") @db.Decimal(5, 2)
   ramUsedGb    Decimal? @map("ram_used_gb") @db.Decimal(8, 2)
@@ -276,8 +277,45 @@ model InfrastructureMetric {
   @@map("infrastructure_metrics")
 }
 
+model VpsHost {
+  id                  String   @id @default(uuid())
+  name                String
+  host                String
+  port                Int      @default(22)
+  username            String
+  passwordEncrypted   String?  @map("password_encrypted")
+  privateKeyEncrypted String?  @map("private_key_encrypted")
+  status              String   @default("unknown")
+  lastError           String?  @map("last_error")
+  lastSeenAt          DateTime? @map("last_seen_at") @db.Timestamptz()
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  metrics VpsMetric[]
+
+  @@map("vps_hosts")
+}
+
+model VpsMetric {
+  id            String   @id @default(uuid())
+  hostId        String   @map("host_id")
+  cpuPercent    Decimal? @map("cpu_percent") @db.Decimal(5, 2)
+  ramUsedGb     Decimal? @map("ram_used_gb") @db.Decimal(8, 2)
+  ramTotalGb    Decimal? @map("ram_total_gb") @db.Decimal(8, 2)
+  diskUsedGb    Decimal? @map("disk_used_gb") @db.Decimal(10, 2)
+  diskTotalGb   Decimal? @map("disk_total_gb") @db.Decimal(10, 2)
+  diskUsedPct   Decimal? @map("disk_used_pct") @db.Decimal(5, 2)
+  loadAverage   Json?    @map("load_average")
+  uptimeSeconds Int?     @map("uptime_seconds")
+  collectedAt   DateTime @default(now()) @map("collected_at") @db.Timestamptz()
+
+  host VpsHost @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@map("vps_metrics")
+}
+
 model PostgresMetric {
-  id                  String   @id @default(uuid()) @db.Uuid
+  id                  String   @id @default(uuid())
   databaseName        String   @map("database_name")
   sizeMb              Decimal? @map("size_mb") @db.Decimal(12, 2)
   activeConnections   Int?     @map("active_connections")
@@ -294,7 +332,7 @@ model PostgresMetric {
 }
 
 model SupabaseMetric {
-  id                String   @id @default(uuid()) @db.Uuid
+  id                String   @id @default(uuid())
   authUsers         Int?     @map("auth_users")
   realtimeConnections Int?   @map("realtime_connections")
   storageObjects    Int?     @map("storage_objects")
@@ -307,10 +345,10 @@ model SupabaseMetric {
 }
 
 model MinioBucket {
-  id              String   @id @default(uuid()) @db.Uuid
+  id              String   @id @default(uuid())
   bucketName      String   @map("bucket_name")
-  productId       String?  @map("product_id") @db.Uuid
-  organizationId  String?  @map("organization_id") @db.Uuid
+  productId       String?  @map("product_id")
+  organizationId  String?  @map("organization_id")
   totalObjects    Int?     @map("total_objects")
   sizeMb          Decimal? @map("size_mb") @db.Decimal(12, 2)
   publicUrl       String?  @map("public_url")
@@ -324,9 +362,9 @@ model MinioBucket {
 }
 
 model WhatsAppInstance {
-  id                  String         @id @default(uuid()) @db.Uuid
-  organizationId      String         @map("organization_id") @db.Uuid
-  workspaceId         String?        @map("workspace_id") @db.Uuid
+  id                  String         @id @default(uuid())
+  organizationId      String         @map("organization_id")
+  workspaceId         String?        @map("workspace_id")
   instanceName        String         @map("instance_name")
   phoneNumber         String?        @map("phone_number")
   status              WhatsAppStatus @default(unknown)
@@ -349,8 +387,8 @@ model WhatsAppInstance {
 }
 
 model ApiHealthCheck {
-  id             String   @id @default(uuid()) @db.Uuid
-  serviceId      String   @map("service_id") @db.Uuid
+  id             String   @id @default(uuid())
+  serviceId      String   @map("service_id")
   url            String
   method         String   @default("GET")
   statusCode     Int?     @map("status_code")
@@ -365,10 +403,10 @@ model ApiHealthCheck {
 }
 
 model UsageEvent {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String?       @map("organization_id") @db.Uuid
-  workspaceId    String?       @map("workspace_id") @db.Uuid
-  productId      String?       @map("product_id") @db.Uuid
+  id             String        @id @default(uuid())
+  organizationId String?       @map("organization_id")
+  workspaceId    String?       @map("workspace_id")
+  productId      String?       @map("product_id")
   eventType      String        @map("event_type")
   eventName      String        @map("event_name")
   severity       EventSeverity @default(info)
@@ -383,11 +421,11 @@ model UsageEvent {
 }
 
 model Alert {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String?       @map("organization_id") @db.Uuid
-  workspaceId    String?       @map("workspace_id") @db.Uuid
-  productId      String?       @map("product_id") @db.Uuid
-  serviceId      String?       @map("service_id") @db.Uuid
+  id             String        @id @default(uuid())
+  organizationId String?       @map("organization_id")
+  workspaceId    String?       @map("workspace_id")
+  productId      String?       @map("product_id")
+  serviceId      String?       @map("service_id")
   title          String
   description    String?
   severity       AlertSeverity @default(warning)
@@ -407,16 +445,16 @@ model Alert {
 }
 
 model SupportTicket {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  workspaceId    String?       @map("workspace_id") @db.Uuid
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  workspaceId    String?       @map("workspace_id")
   title          String
   description    String?
   status         TicketStatus  @default(open)
   priority       TicketPriority @default(medium)
   category       String?
   channel        TicketChannel @default(ticket)
-  assignedTo     String?       @map("assigned_to") @db.Uuid
+  assignedTo     String?       @map("assigned_to")
   slaDueAt       DateTime?     @map("sla_due_at") @db.Timestamptz()
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
@@ -431,10 +469,10 @@ model SupportTicket {
 }
 
 model SupportMessage {
-  id              String   @id @default(uuid()) @db.Uuid
-  ticketId        String   @map("ticket_id") @db.Uuid
+  id              String   @id @default(uuid())
+  ticketId        String   @map("ticket_id")
   senderType      String   @map("sender_type")
-  senderId        String?  @map("sender_id") @db.Uuid
+  senderId        String?  @map("sender_id")
   message         String
   attachments     Json?    @default("[]")
   isInternalNote  Boolean  @default(false) @map("is_internal_note")
@@ -446,8 +484,8 @@ model SupportMessage {
 }
 
 model Subscription {
-  id             String             @id @default(uuid()) @db.Uuid
-  organizationId String             @map("organization_id") @db.Uuid
+  id             String             @id @default(uuid())
+  organizationId String             @map("organization_id")
   planName       String             @map("plan_name")
   amount         Decimal            @map("amount") @db.Decimal(12, 2)
   billingCycle   BillingCycle       @default(monthly) @map("billing_cycle")
@@ -462,9 +500,9 @@ model Subscription {
 }
 
 model Invoice {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  subscriptionId String?       @map("subscription_id") @db.Uuid
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  subscriptionId String?       @map("subscription_id")
   amount         Decimal       @map("amount") @db.Decimal(12, 2)
   dueDate        DateTime      @map("due_date") @db.Date
   paidAt         DateTime?     @map("paid_at") @db.Timestamptz()
@@ -478,8 +516,8 @@ model Invoice {
 }
 
 model User {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String?  @map("organization_id") @db.Uuid
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
   name           String
   email          String   @unique
   passwordHash   String   @map("password_hash")
@@ -501,12 +539,12 @@ model User {
 }
 
 model AuditLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @map("user_id") @db.Uuid
-  organizationId String?  @map("organization_id") @db.Uuid
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  organizationId String?  @map("organization_id")
   action         String
   entityType     String   @map("entity_type")
-  entityId       String?  @map("entity_id") @db.Uuid
+  entityId       String?  @map("entity_id")
   ipAddress      String?  @map("ip_address")
   userAgent      String?  @map("user_agent")
   metadata       Json?    @default("{}")
@@ -519,9 +557,9 @@ model AuditLog {
 }
 
 model Notification {
-  id        String              @id @default(uuid()) @db.Uuid
-  userId    String              @map("user_id") @db.Uuid
-  organizationId String?        @map("organization_id") @db.Uuid
+  id        String              @id @default(uuid())
+  userId    String              @map("user_id")
+  organizationId String?        @map("organization_id")
   title     String
   message   String?
   severity  NotificationSeverity @default(info)
@@ -536,7 +574,7 @@ model Notification {
 }
 
 model PortainerConnection {
-  id              String   @id @default(uuid()) @db.Uuid
+  id              String   @id @default(uuid())
   name            String
   baseUrl         String   @map("base_url")
   apiKeyEncrypted String   @map("api_key_encrypted")
@@ -547,7 +585,7 @@ model PortainerConnection {
 }
 
 model KnowledgeArticle {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid())
   title     String
   category  String
   content   String
