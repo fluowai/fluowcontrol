@@ -15,29 +15,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - fluow-network
-    restart: unless-stopped
-
-  minio:
-    image: minio/minio:latest
-    container_name: fluow-minio
-    command: server /data --console-address ":9001"
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    networks:
-      - fluow-network
+      - v5company1
     restart: unless-stopped
 
   control-center:
@@ -53,18 +31,13 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      MINIO_USE_SSL: "false"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
       FLUOW_AGENT_URL: http://fluow-agent:3001
       FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:-https://noc.v5company.com.br}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
@@ -72,7 +45,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - fluow-network
+      - v5company1
     restart: unless-stopped
 
   fluow-agent:
@@ -86,7 +59,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - fluow-network
+      - v5company1
     restart: unless-stopped
 
   metrics-worker:
@@ -99,11 +72,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      MINIO_USE_SSL: "false"
       FLUOW_AGENT_URL: http://fluow-agent:3001
       FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
@@ -116,7 +84,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - fluow-network
+      - v5company1
     restart: unless-stopped
 
   alert-worker:
@@ -129,11 +97,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      MINIO_USE_SSL: "false"
       FLUOW_AGENT_URL: http://fluow-agent:3001
       FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:?FLUOW_AGENT_API_KEY is required}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
@@ -146,9 +109,12 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - fluow-network
+      - v5company1
     restart: unless-stopped
 
 volumes:
   redis_data:
-  minio_data:
+
+networks:
+  v5company1:
+    driver: bridge
