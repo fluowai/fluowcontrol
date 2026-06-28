@@ -6,7 +6,7 @@ services:
     image: redis:7-alpine
     container_name: fluow-redis
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -24,20 +24,20 @@ services:
       dockerfile: Dockerfile
     container_name: fluow-control-center
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      LOG_LEVEL: info
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: redis://fluow-redis:6379
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRES_IN: 7d
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       FLUOW_AGENT_URL: http://fluow-agent:3001
-      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      APP_URL: ${APP_URL:-https://noc.v5company.com.br}
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+      APP_URL: https://noc.v5company.com.br
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
@@ -60,7 +60,7 @@ services:
     container_name: fluow-agent
     environment:
       FLUOW_AGENT_PORT: 3001
-      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY}
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
@@ -74,13 +74,13 @@ services:
     container_name: fluow-metrics-worker
     environment:
       NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: info
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: redis://fluow-redis:6379
       FLUOW_AGENT_URL: http://fluow-agent:3001
-      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY}
-      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:-}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -99,13 +99,13 @@ services:
     container_name: fluow-alert-worker
     environment:
       NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: info
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: redis://fluow-redis:6379
       FLUOW_AGENT_URL: http://fluow-agent:3001
-      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY}
-      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      FLUOW_AGENT_API_KEY: ${FLUOW_AGENT_API_KEY:-}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
